@@ -1,0 +1,51 @@
+[build-system]
+requires = ["setuptools>=45", "wheel", "setuptools_scm"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "musetalk"
+dynamic = ["version"]
+description = "Real-Time High-Fidelity Video Dubbing via Spatio-Temporal Sampling"
+readme = "README.md"
+license = {text = "MIT"}
+authors = [
+    {name = "Lyra Lab, Tencent Music Entertainment"},
+]
+keywords = ["talking-head", "video-generation", "lip-sync", "deepfake", "ai", "computer-vision", "flask-api"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.8",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Multimedia :: Video",
+]
+requires-python = ">=3.8"
+
+[project.urls]
+Homepage = "https://github.com/TMElyralab/MuseTalk"
+Repository = "https://github.com/TMElyralab/MuseTalk"
+Documentation = "https://github.com/TMElyralab/MuseTalk/blob/main/README.md"
+"Bug Reports" = "https://github.com/TMElyralab/MuseTalk/issues"
+
+[project.scripts]
+musetalk-api = "service.app:main"
+musetalk-inference = "scripts.inference:main"
+musetalk-realtime = "scripts.realtime_inference:main"
+
+[tool.setuptools]
+packages = ["musetalk", "service"]
+include-package-data = true
+
+[tool.setuptools.dynamic]
+version = {attr = "musetalk.__version__"}
+
+[tool.setuptools.package-data]
+musetalk = ["**/*.py", "**/*.json", "**/*.yaml", "**/*.yml"]
+service = ["**/*.py", "**/*.json", "**/*.yaml", "**/*.yml"]
