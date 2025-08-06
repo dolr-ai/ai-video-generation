@@ -33,11 +33,11 @@ def health_check():
 def generate_talking_head():
     """
     Generate talking head video from image and audio
-    
+
     Request body:
     {
         "image": "url or local path",
-        "audio": "url or local path", 
+        "audio": "url or local path",
         "script": "optional text script",
         "local_dev": true/false,
         "bbox_shift": 0,
@@ -48,14 +48,14 @@ def generate_talking_head():
     """
     try:
         data = request.get_json()
-        
+
         if not data:
             return jsonify({'error': 'No JSON data provided'}), 400
-            
+
         # Validate required fields
         if 'image' not in data or 'audio' not in data:
             return jsonify({'error': 'Both image and audio are required'}), 400
-            
+
         # Extract parameters
         image_source = data['image']
         audio_source = data['audio']
@@ -65,12 +65,12 @@ def generate_talking_head():
         realtime = data.get('realtime', False)
         fps = data.get('fps', Config.DEFAULT_FPS)
         batch_size = data.get('batch_size', Config.DEFAULT_BATCH_SIZE)
-        
+
         # Generate unique task ID
         task_id = str(uuid.uuid4())
         task_dir = os.path.join(Config.TEMP_DIR, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        
+
         try:
             # Process image input
             if is_url(image_source):
@@ -81,7 +81,7 @@ def generate_talking_head():
                 if not os.path.exists(image_source):
                     return jsonify({'error': f'Image file not found: {image_source}'}), 404
                 image_path = image_source
-                
+
             # Process audio input
             if is_url(audio_source):
                 logger.info(f"Downloading audio from URL: {audio_source}")
@@ -91,10 +91,10 @@ def generate_talking_head():
                 if not os.path.exists(audio_source):
                     return jsonify({'error': f'Audio file not found: {audio_source}'}), 404
                 audio_path = audio_source
-                
+
             # Get MuseTalk service
             service = get_musetalk_service()
-            
+
             # Generate talking head
             logger.info(f"Generating talking head for task {task_id}")
             result = service.generate_talking_head(
@@ -107,10 +107,10 @@ def generate_talking_head():
                 batch_size=batch_size,
                 script=script
             )
-            
+
             if result['status'] == 'success':
                 output_path = result['output_path']
-                
+
                 if local_dev:
                     # Return local file path
                     return jsonify({
@@ -132,14 +132,14 @@ def generate_talking_head():
                     'status': 'error',
                     'message': result.get('message', 'Failed to generate talking head')
                 }), 500
-                
+
         except Exception as e:
             logger.error(f"Error processing task {task_id}: {str(e)}")
             return jsonify({
                 'status': 'error',
                 'message': str(e)
             }), 500
-            
+
     except Exception as e:
         logger.error(f"Error in generate endpoint: {str(e)}")
         return jsonify({
@@ -151,7 +151,7 @@ def generate_talking_head():
 def generate_realtime():
     """
     Generate talking head using real-time inference
-    
+
     Request body:
     {
         "avatar_id": "unique_avatar_id",
@@ -164,26 +164,26 @@ def generate_realtime():
     """
     try:
         data = request.get_json()
-        
+
         if not data:
             return jsonify({'error': 'No JSON data provided'}), 400
-            
+
         # Validate required fields
         if 'avatar_id' not in data or 'video' not in data:
             return jsonify({'error': 'Both avatar_id and video are required'}), 400
-            
+
         avatar_id = data['avatar_id']
         video_source = data['video']
         audio_clips = data.get('audio_clips', [])
         preparation = data.get('preparation', True)
         bbox_shift = data.get('bbox_shift', 0)
         local_dev = data.get('local_dev', True)
-        
+
         # Generate unique task ID
         task_id = str(uuid.uuid4())
         task_dir = os.path.join(Config.TEMP_DIR, task_id)
         os.makedirs(task_dir, exist_ok=True)
-        
+
         try:
             # Process video input
             if is_url(video_source):
@@ -193,7 +193,7 @@ def generate_realtime():
                 if not os.path.exists(video_source):
                     return jsonify({'error': f'Video file not found: {video_source}'}), 404
                 video_path = video_source
-                
+
             # Process audio clips
             processed_audio_clips = []
             for i, audio_clip in enumerate(audio_clips):
@@ -204,10 +204,10 @@ def generate_realtime():
                         return jsonify({'error': f'Audio file not found: {audio_clip}'}), 404
                     audio_path = audio_clip
                 processed_audio_clips.append(audio_path)
-                
+
             # Get MuseTalk service
             service = get_musetalk_service()
-            
+
             # Generate talking head with real-time inference
             logger.info(f"Generating real-time talking head for avatar {avatar_id}")
             results = service.generate_realtime(
@@ -218,7 +218,7 @@ def generate_realtime():
                 bbox_shift=bbox_shift,
                 output_dir=task_dir
             )
-            
+
             if local_dev:
                 # Return local file paths
                 return jsonify({
@@ -242,14 +242,14 @@ def generate_realtime():
                         'status': 'error',
                         'message': 'No videos generated'
                     }), 500
-                    
+
         except Exception as e:
             logger.error(f"Error processing real-time task {task_id}: {str(e)}")
             return jsonify({
                 'status': 'error',
                 'message': str(e)
             }), 500
-            
+
     except Exception as e:
         logger.error(f"Error in generate_realtime endpoint: {str(e)}")
         return jsonify({
@@ -264,20 +264,20 @@ def upload_file():
     """
     if 'file' not in request.files:
         return jsonify({'error': 'No file provided'}), 400
-        
+
     file = request.files['file']
     if file.filename == '':
         return jsonify({'error': 'No file selected'}), 400
-        
+
     if file and allowed_file(file.filename):
         filename = secure_filename(file.filename)
         upload_id = str(uuid.uuid4())
         upload_dir = os.path.join(Config.TEMP_DIR, 'uploads', upload_id)
         os.makedirs(upload_dir, exist_ok=True)
-        
+
         file_path = os.path.join(upload_dir, filename)
         file.save(file_path)
-        
+
         return jsonify({
             'status': 'success',
             'upload_id': upload_id,

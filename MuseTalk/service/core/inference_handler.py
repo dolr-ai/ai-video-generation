@@ -69,105 +69,90 @@ class InferenceHandler:
                 
             # Process audio
             logger.info("Processing audio...")
-            whisper_feature = self.audio_processor.audio2feat(audio_path)
-            whisper_chunks = self.audio_processor.feature2chunks(feature_array=whisper_feature, fps=fps)
+            whisper_input_features, librosa_length = self.audio_processor.get_audio_feature(audio_path, weight_dtype=weight_dtype)
+            whisper_chunks = self.audio_processor.get_whisper_chunk(
+                whisper_input_features,
+                self.device,
+                weight_dtype,
+                self.whisper,
+                librosa_length,
+                fps=fps,
+                audio_padding_length_left=2,
+                audio_padding_length_right=2,
+            )
             
             # Get face coordinates and frames
             logger.info("Detecting faces and landmarks...")
             coord_list, frame_list = get_landmark_and_bbox(input_img_list, bbox_shift)
             
-            # Process audio features
-            audio_feat_list = []
-            for audio_idx in range(len(whisper_chunks)):
-                # Process whisper chunks
-                audio_list = []
-                for whisper_chunk in whisper_chunks[audio_idx]:
-                    audio_list.append(whisper_chunk)
-                audio_feat = torch.from_numpy(np.array(audio_list, dtype=np.float32)).to(device=self.device, dtype=weight_dtype)
-                audio_feat = self.pe(audio_feat).to(dtype=weight_dtype)
-                audio_feat_list.append(audio_feat)
-                
-            # Create data generator
-            logger.info("Creating data generator...")
-            gen = datagen(
-                whisper_chunks,
-                coord_list,
-                frame_list,
-                batch_size,
-                os.path.join(output_dir, "mask"),
-                os.path.join(output_dir, "mask_coords.pkl")
-            )
-            
-            # Process batches
-            logger.info("Generating frames...")
-            res_frame_list = []
-            frame_idx = 0
+            # Prepare VAE latents for each frame
+            logger.info("Preparing VAE latents...")
+            input_latent_list = []
+            coord_placeholder = (0.0, 0.0, 0.0, 0.0)
             
             # Version-specific parameters
             if Config.MUSETALK_VERSION == "v15":
                 extra_margin = 10
                 parsing_mode = "jaw"
             else:
-                extra_margin = 0
-                parsing_mode = "full"
+                extra_margin = 0  
+                parsing_mode = "raw"
             
-            for i, (whisper_batch, coord_batch, frame_batch) in enumerate(tqdm(gen, total=int(np.ceil(len(whisper_chunks) / batch_size)))):
-                if coord_batch.shape[1] == 0:
+            for idx, (bbox, frame) in enumerate(zip(coord_list, frame_list)):
+                if bbox == coord_placeholder:
                     continue
-                    
-                audio_feat_batch = audio_feat_list[i]
-                audio_feat_batch = audio_feat_batch.unsqueeze(0).repeat(coord_batch.shape[0], 1, 1, 1).reshape(-1, audio_feat_batch.shape[-2], audio_feat_batch.shape[-1])
+                x1, y1, x2, y2 = bbox
+                if Config.MUSETALK_VERSION == "v15":
+                    y2 = y2 + extra_margin
+                    y2 = min(y2, frame.shape[0])
+                    coord_list[idx] = [x1, y1, x2, y2]  # Update bbox
+                crop_frame = frame[y1:y2, x1:x2]
+                resized_crop_frame = cv2.resize(crop_frame, (256, 256), interpolation=cv2.INTER_LANCZOS4)
+                latents = self.vae.get_latents_for_unet(resized_crop_frame)
+                input_latent_list.append(latents)
+            
+            # Create cyclic list for looping
+            input_latent_list_cycle = input_latent_list + input_latent_list[::-1]
+            coord_list_cycle = coord_list + coord_list[::-1]
+            frame_list_cycle = frame_list + frame_list[::-1]
+            
+            # Create data generator
+            logger.info("Generating frames...")
+            gen = datagen(whisper_chunks, input_latent_list_cycle, batch_size, device=self.device)
+            
+            video_num = len(whisper_chunks)
+            res_frame_list = []
+            
+            for i, (whisper_batch, latent_batch) in enumerate(tqdm(gen, total=int(np.ceil(float(video_num) / batch_size)))):
+                audio_feature_batch = self.pe(whisper_batch.to(self.device))
+                latent_batch = latent_batch.to(device=self.device, dtype=self.unet.model.dtype)
+
+                pred_latents = self.unet.model(latent_batch,
+                                        self.timesteps,
+                                        encoder_hidden_states=audio_feature_batch).sample
+                pred_latents = pred_latents.to(device=self.device, dtype=self.vae.vae.dtype)
+                recon = self.vae.decode_latents(pred_latents)
+                for res_frame in recon:
+                    res_frame_list.append(res_frame)
+            
+            # Save frames and create video
+            logger.info("Saving frames...")
+            for idx, res_frame in enumerate(res_frame_list):
+                bbox = coord_list_cycle[idx % len(coord_list_cycle)]
+                ori_frame = frame_list_cycle[idx % len(frame_list_cycle)]
+                x1, y1, x2, y2 = bbox
+                try:
+                    res_frame = cv2.resize(res_frame.astype(np.uint8), (x2 - x1, y2 - y1))
+                except:
+                    continue
                 
-                # Process each frame in batch
-                for j in range(coord_batch.shape[0]):
-                    coords = coord_batch[j]
-                    
-                    for k in range(coords.shape[0]):
-                        y1, y2, x1, x2 = coords[k].tolist()
-                        
-                        # Skip if invalid coordinates
-                        if y1 == -1:
-                            if len(res_frame_list) > frame_idx:
-                                frame = res_frame_list[frame_idx].copy()
-                            else:
-                                frame = frame_batch[j][k].copy()
-                        else:
-                            frame = frame_batch[j][k]
-                            y2 = y2 + extra_margin
-                            y2 = min(y2, frame.shape[0])
-                            
-                            # Crop and resize
-                            crop_frame = frame[y1:y2, x1:x2]
-                            if crop_frame.shape[0] == 0 or crop_frame.shape[1] == 0:
-                                logger.warning(f"Invalid crop dimensions at frame {frame_idx}")
-                                continue
-                                
-                            crop_frame = cv2.resize(crop_frame, (256, 256), interpolation=cv2.INTER_LANCZOS4)
-                            
-                            # Get latents
-                            latents = self.vae.get_latents_for_unet(crop_frame)
-                            latents = latents.to(dtype=weight_dtype)
-                            
-                            # Model prediction
-                            audio_feat_frame = audio_feat_batch[k].unsqueeze(0)
-                            pred_latents = self.unet.model(latents.unsqueeze(0), self.timesteps, encoder_hidden_states=audio_feat_frame).sample
-                            recon = self.vae.decode_latents(pred_latents)
-                            
-                            # Blend back to original
-                            recon_frame = recon[0]
-                            recon_frame = cv2.resize(recon_frame.astype(np.uint8), (x2-x1, y2-y1))
-                            frame = get_image(frame, recon_frame, [x1, y1, x2, y2], mode=parsing_mode, fp=self.face_parser)
-                        
-                        # Save frame
-                        frame_filename = f"{frame_idx:08d}.png"
-                        frame_path = os.path.join(result_img_save_path, frame_filename)
-                        cv2.imwrite(frame_path, cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
-                        
-                        if frame_idx == 0 or len(res_frame_list) <= frame_idx:
-                            res_frame_list.append(frame)
-                        else:
-                            res_frame_list[frame_idx] = frame
-                        frame_idx += 1
+                # Blend with original
+                combine_frame = get_image(ori_frame, res_frame, bbox, mode=parsing_mode, fp=self.face_parser)
+                
+                # Save frame
+                frame_filename = f"{idx:08d}.png"
+                frame_path = os.path.join(result_img_save_path, frame_filename)
+                cv2.imwrite(frame_path, combine_frame)
             
             # Create output video
             logger.info("Creating output video...")
@@ -190,7 +175,7 @@ class InferenceHandler:
             return {
                 'status': 'success',
                 'output_path': output_video_path,
-                'frames_generated': frame_idx
+                'frames_generated': len(res_frame_list)
             }
             
         except Exception as e:

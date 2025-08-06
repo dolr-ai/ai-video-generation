@@ -259,3 +259,94 @@ curl -X POST http://localhost:5000/api/v1/upload \
 2. **FFmpeg Errors**: Check FFmpeg installation and path configuration
 3. **GPU Errors**: Verify CUDA installation and GPU availability
 4. **Memory Issues**: Reduce batch_size or use float16 precision
+
+## cURL Test Commands
+
+### 1. Health Check
+```bash
+curl -X GET http://localhost:5000/api/v1/health
+```
+
+### 2. Upload a file
+```bash
+curl -X POST http://localhost:5000/api/v1/upload \
+  -F "file=@/path/to/your/image.jpg"
+```
+
+### 3. Generate talking head with local files
+```bash
+curl -X POST http://localhost:5000/api/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": "/path/to/local/image.jpg",
+    "audio": "/path/to/local/audio.wav",
+    "local_dev": true,
+    "bbox_shift": 0,
+    "fps": 25,
+    "batch_size": 8
+  }'
+```
+
+### 4. Generate talking head with URLs
+```bash
+curl -X POST http://localhost:5000/api/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": "https://example.com/person.jpg",
+    "audio": "https://example.com/speech.wav",
+    "local_dev": false,
+    "realtime": false
+  }' \
+  --output generated_video.mp4
+```
+
+### 5. Real-time generation with avatar
+```bash
+curl -X POST http://localhost:5000/api/v1/generate_realtime \
+  -H "Content-Type: application/json" \
+  -d '{
+    "avatar_id": "my_avatar_001",
+    "video": "/path/to/source/video.mp4",
+    "audio_clips": [
+      "/path/to/audio1.wav",
+      "/path/to/audio2.wav"
+    ],
+    "preparation": true,
+    "bbox_shift": 0,
+    "local_dev": true
+  }'
+```
+
+### 6. Test with sample data (if available)
+```bash
+# First upload an image
+IMAGE_RESPONSE=$(curl -s -X POST http://localhost:5000/api/v1/upload \
+  -F "file=@/path/to/test/image.jpg")
+IMAGE_PATH=$(echo $IMAGE_RESPONSE | jq -r '.file_path')
+
+# Then upload audio
+AUDIO_RESPONSE=$(curl -s -X POST http://localhost:5000/api/v1/upload \
+  -F "file=@/path/to/test/audio.wav")
+AUDIO_PATH=$(echo $AUDIO_RESPONSE | jq -r '.file_path')
+
+# Generate video using uploaded files
+curl -X POST http://localhost:5000/api/v1/generate \
+  -H "Content-Type: application/json" \
+  -d "{
+    \"image\": \"$IMAGE_PATH\",
+    \"audio\": \"$AUDIO_PATH\",
+    \"local_dev\": true
+  }"
+```
+
+### 7. Download generated video (when local_dev=false)
+```bash
+curl -X POST http://localhost:5000/api/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": "/path/to/image.jpg",
+    "audio": "/path/to/audio.wav",
+    "local_dev": false
+  }' \
+  --output talking_head_$(date +%s).mp4
+```

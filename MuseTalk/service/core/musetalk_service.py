@@ -1,4 +1,5 @@
 import os
+import sys
 import torch
 import logging
 import shutil
@@ -71,10 +72,14 @@ class MuseTalkService:
         self.device = torch.device(f"cuda:{Config.GPU_ID}" if torch.cuda.is_available() else "cpu")
         logger.info(f"Using device: {self.device}")
         
+        # Change working directory for relative paths in MuseTalk components
+        original_cwd = os.getcwd()
+        os.chdir(Config.MUSETALK_DIR)
+        
         # Load models
         self.vae, self.unet, self.pe = load_all_model(
             unet_model_path=Config.UNET_MODEL_PATH,
-            vae_type='mse',
+            vae_type='sd-vae',
             unet_config=Config.UNET_CONFIG_PATH,
             device=self.device
         )
@@ -97,7 +102,7 @@ class MuseTalkService:
         self.whisper = self.whisper.to(device=self.device, dtype=weight_dtype).eval()
         self.whisper.requires_grad_(False)
         
-        # Initialize face parser
+        # Initialize face parser (while still in MuseTalk directory)
         if Config.MUSETALK_VERSION == "v15":
             self.face_parser = FaceParsing(
                 left_cheek_width=90,
@@ -105,6 +110,9 @@ class MuseTalkService:
             )
         else:
             self.face_parser = FaceParsing()
+            
+        # Restore original working directory
+        os.chdir(original_cwd)
         
         # Initialize handlers
         self.inference_handler = InferenceHandler(
