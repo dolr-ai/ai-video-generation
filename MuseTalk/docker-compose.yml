@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  musetalk:
+    build: .
+    image: musetalk:latest
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+    volumes:
+      # Mount model weights directory
+      - ./models:/app/models
+      # Mount input data
+      - ./data:/app/data
+      # Mount output results
+      - ./results:/app/results
+      # Mount configs for easy editing
+      - ./configs:/app/configs
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    command: >
+      python -m scripts.inference
+      --inference_config ./configs/inference/test.yaml
+      --result_dir ./results/test
+      --unet_model_path ./models/musetalkV15/unet.pth
+      --unet_config ./models/musetalkV15/musetalk.json
+      --version v15
+      --ffmpeg_path /usr/bin
