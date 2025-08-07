@@ -1,18 +1,43 @@
+# System files
 .DS_Store
 *.log
 .idea/
 .vscode/
+
+# Python files
 *.pyc
-.ipynb_checkpoints
-results/
-models/
-**/__pycache__/
 *.py[cod]
 *$py.class
+**/__pycache__/
+.ipynb_checkpoints
+
+# Model weights and artifacts (but keep model definitions)
+/models/
+!/musetalk/models/
+
+# Data and results
 dataset/
+results/
+debug
+exp_out
+
+# Tools and binaries
 ffmpeg*
 ffmprobe*
 ffplay*
-debug
-exp_out
+
+# Gradio cache
 .gradio
+
+# Virtual environment
+.venv/
+venv/
+env/
+
+# Temporary files
+*.tmp
+*.swp
+*~
+
+# OS generated files
+Thumbs.db
