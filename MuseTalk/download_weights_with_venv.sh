@@ -3,6 +3,27 @@
 # Activate virtual environment
 source .venv/bin/activate
 
+# Ensure huggingface_hub CLI is installed
+if ! command -v hf &> /dev/null; then
+    echo "hf command not found. Installing huggingface_hub..."
+    uv pip install --upgrade huggingface_hub
+    if ! command -v hf &> /dev/null; then
+        echo "hf command installation failed." >&2
+        exit 1
+    fi
+fi
+
+# Ensure gdown is installed
+if ! command -v gdown &> /dev/null; then
+    echo "gdown not found. Installing gdown..."
+    uv pip install --upgrade gdown
+    if ! command -v gdown &> /dev/null; then
+        echo "gdown installation failed." >&2
+        exit 1
+    fi
+fi
+
+
 # Set the checkpoints directory
 CheckpointsDir="models"
 
@@ -13,32 +34,32 @@ mkdir -p models/musetalk models/musetalkV15 models/syncnet models/dwpose models/
 # export HF_ENDPOINT=https://hf-mirror.com
 
 # Download MuseTalk V1.0 weights
-huggingface-cli download TMElyralab/MuseTalk \
+hf download TMElyralab/MuseTalk \
   --local-dir $CheckpointsDir \
   --include "musetalk/musetalk.json" "musetalk/pytorch_model.bin"
 
 # Download MuseTalk V1.5 weights (unet.pth)
-huggingface-cli download TMElyralab/MuseTalk \
+hf download TMElyralab/MuseTalk \
   --local-dir $CheckpointsDir \
   --include "musetalkV15/musetalk.json" "musetalkV15/unet.pth"
 
 # Download SD VAE weights
-huggingface-cli download stabilityai/sd-vae-ft-mse \
+hf download stabilityai/sd-vae-ft-mse \
   --local-dir $CheckpointsDir/sd-vae \
   --include "config.json" "diffusion_pytorch_model.bin"
 
 # Download Whisper weights
-huggingface-cli download openai/whisper-tiny \
+hf download openai/whisper-tiny \
   --local-dir $CheckpointsDir/whisper \
   --include "config.json" "pytorch_model.bin" "preprocessor_config.json"
 
 # Download DWPose weights
-huggingface-cli download yzd-v/DWPose \
+hf download yzd-v/DWPose \
   --local-dir $CheckpointsDir/dwpose \
   --include "dw-ll_ucoco_384.pth"
 
 # Download SyncNet weights
-huggingface-cli download ByteDance/LatentSync \
+hf download ByteDance/LatentSync \
   --local-dir $CheckpointsDir/syncnet \
   --include "latentsync_syncnet.pt"
 
