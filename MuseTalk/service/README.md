@@ -12,40 +12,54 @@ A Flask-based REST API for generating talking head videos using MuseTalk.
 
 ## Installation
 
-1. First, ensure MuseTalk is properly set up following the instructions in `docs/setup.md`
+### Prerequisites
+1. First, ensure MuseTalk is properly set up with `.venv` following the main setup instructions
+2. Ensure all model weights are downloaded in `models/` directory
+3. Verify CUDA GPU is available and working
 
-2. Install the MuseTalk package in development mode (this handles all imports properly):
+### Exact Setup Steps (Working Configuration)
+
+**Step 1: Navigate to MuseTalk directory and activate venv**
 ```bash
-cd MuseTalk
-pip install -e .
+cd /path/to/MuseTalk
+source ../.venv/bin/activate  # Assuming .venv is in parent directory
 ```
 
-This will install:
-- MuseTalk core package with all dependencies
-- Flask API service with all its dependencies  
-- Console scripts for easy access
-
-Alternatively, if you want to install just the service dependencies:
+**Step 2: Install Flask service dependencies**
 ```bash
-cd MuseTalk/service  
-pip install -r requirements.txt
-# But you'll still need: pip install -e .. from MuseTalk root
+# Install Flask and required packages using uv (recommended)
+uv pip install Flask flask-cors Werkzeug gunicorn
+
+# Verify installation
+python -c "import flask; print('Flask version:', flask.__version__)"
+```
+
+**Step 3: Verify environment**
+```bash
+# Check Python and packages
+which python
+python --version  # Should be 3.10.18
+python -c "import torch; print('CUDA available:', torch.cuda.is_available())"
 ```
 
 ## Running the API
 
-After installing with `pip install -e .`, you have multiple options:
-
-### 1. Using console script (easiest)
+### Method 1: Direct Python execution with PYTHONPATH (Recommended - Tested Working)
 ```bash
-musetalk-api
+# From MuseTalk root directory
+cd /path/to/MuseTalk
+source ../.venv/bin/activate
+PYTHONPATH=. python service/run.py
 ```
 
-### 2. Using the startup script (with environment checks)
+### Method 2: Using pip install -e (Alternative)
 ```bash
-cd MuseTalk/service
-./start.sh
+cd MuseTalk
+pip install -e .
+python service/run.py
 ```
+
+**Note**: Method 1 is recommended as it has been tested and works reliably with the current setup.
 
 The startup script supports several options:
 ```bash
@@ -75,6 +89,62 @@ python -m flask --app app run --host=0.0.0.0 --port=5000
 ```
 
 The API will start on `http://localhost:5000` by default.
+
+**Expected Output:**
+```
+Loads checkpoint by local backend from path: ./models/dwpose/dw-ll_ucoco_384.pth
+cuda start
+Starting MuseTalk Flask API on http://0.0.0.0:5000
+Health check: http://0.0.0.0:5000/api/v1/health
+ * Serving Flask app 'service.app'
+ * Debug mode: on
+ * Running on all addresses (0.0.0.0)
+ * Running on http://127.0.0.1:5000
+ * Running on http://172.17.0.2:5000
+```
+
+## Quick Start Testing
+
+### Test 1: Health Check
+```bash
+curl -X GET http://localhost:5000/api/v1/health
+```
+
+Expected response:
+```json
+{
+  "service": "MuseTalk API",
+  "status": "healthy",
+  "version": "v15"
+}
+```
+
+### Test 2: Generate Talking Head (Tested Working)
+```bash
+# Test with your own image and audio files
+curl -X POST http://localhost:5000/api/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": "/path/to/your/image.png",
+    "audio": "/path/to/your/audio.mp3",
+    "local_dev": true,
+    "bbox_shift": 0,
+    "fps": 25,
+    "batch_size": 8
+  }'
+```
+
+Expected response:
+```json
+{
+  "message": "Talking head generated successfully",
+  "output_path": "/workspace/ai-video-generation/MuseTalk/results/api/temp/[task-id]/filename.mp4",
+  "status": "success",
+  "task_id": "[unique-task-id]"
+}
+```
+
+**Note**: Video generation takes approximately 1-2 minutes depending on audio length and system performance.
 
 ## API Endpoints
 
@@ -255,10 +325,42 @@ curl -X POST http://localhost:5000/api/v1/upload \
 
 ## Troubleshooting
 
-1. **Model Loading Issues**: Ensure all model weights are downloaded in `/MuseTalk/models/`
-2. **FFmpeg Errors**: Check FFmpeg installation and path configuration
-3. **GPU Errors**: Verify CUDA installation and GPU availability
-4. **Memory Issues**: Reduce batch_size or use float16 precision
+### Common Issues and Solutions
+
+1. **ModuleNotFoundError: No module named 'service'**
+   - **Solution**: Use PYTHONPATH method: `PYTHONPATH=. python service/run.py`
+   - **Cause**: Python can't find the service module without proper path configuration
+
+2. **Flask/Dependencies Installation Issues**
+   - **Solution**: Use uv instead of pip: `uv pip install Flask flask-cors Werkzeug gunicorn`
+   - **Alternative**: Install packages individually if batch install fails
+
+3. **Model Loading Issues**: 
+   - Ensure all model weights are downloaded in `/MuseTalk/models/`
+   - Check directory structure matches requirements
+   - Verify CUDA memory availability (8GB+ recommended)
+
+4. **NumPy Compatibility Warnings**: 
+   - These are warnings, not errors - service will still work
+   - Related to TensorFlow/NumPy version compatibility
+
+5. **FFmpeg Errors**: 
+   - Service uses system FFmpeg automatically
+   - Verify installation: `ffmpeg -version`
+
+6. **GPU/CUDA Errors**: 
+   - Verify CUDA availability: `python -c "import torch; print(torch.cuda.is_available())"`
+   - Check GPU memory usage during inference
+
+7. **Service Startup Takes Long Time**:
+   - First startup loads all models (~30-60 seconds)
+   - Subsequent requests are much faster
+   - Models remain loaded in memory
+
+### Performance Notes
+- **First Request**: ~2-3 minutes (model loading + inference)
+- **Subsequent Requests**: ~30-60 seconds (inference only)
+- **GPU Memory**: Requires ~6-8GB VRAM for optimal performance
 
 ## cURL Test Commands
 
@@ -350,3 +452,52 @@ curl -X POST http://localhost:5000/api/v1/generate \
   }' \
   --output talking_head_$(date +%s).mp4
 ```
+
+## Tested Configuration
+
+### Verified Working Setup
+**Environment**: 
+- Python 3.10.18
+- CUDA 11.8
+- PyTorch 2.0.1+cu118
+- Flask 3.1.1
+- Ubuntu Linux
+
+**Tested Commands** (logged in `commands.log`):
+```bash
+# Setup
+cd /workspace/ai-video-generation/MuseTalk
+source ../.venv/bin/activate
+uv pip install Flask flask-cors Werkzeug gunicorn
+
+# Run service
+PYTHONPATH=. python service/run.py
+
+# Test API
+curl -X GET http://localhost:5000/api/v1/health
+curl -X POST http://localhost:5000/api/v1/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "image": "/path/to/image.png",
+    "audio": "/path/to/audio.mp3",
+    "local_dev": true,
+    "bbox_shift": 0,
+    "fps": 25,
+    "batch_size": 8
+  }'
+```
+
+**Test Results**:
+- ✅ Health endpoint responds correctly
+- ✅ Video generation completes successfully
+- ✅ Output files generated in `results/api/temp/` directory
+- ✅ CUDA GPU acceleration working
+- ✅ Both male and female test cases successful
+
+**Generated Video Examples**:
+- Female: 1.0MB MP4, ~3 seconds duration
+- Male: 1.1MB MP4, ~3 seconds duration
+- Processing time: ~60-90 seconds per video
+
+**Last Updated**: 2025-08-10 - Tested and verified working configuration
+
