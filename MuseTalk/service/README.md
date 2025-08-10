@@ -1,4 +1,11 @@
-# MuseTalk Flask API
+# MuseTalk REST APIs
+
+REST APIs for generating talking head videos using MuseTalk. Two implementations available:
+
+- **Flask API** (this directory) - Single-server Flask implementation
+- **FastAPI API** (`../fastapi_server/`) - Two-server FastAPI implementation with better scalability
+
+## Flask API
 
 A Flask-based REST API for generating talking head videos using MuseTalk.
 

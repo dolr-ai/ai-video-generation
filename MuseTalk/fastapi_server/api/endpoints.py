@@ -13,6 +13,18 @@ from utils.file_utils import (
 )
 from config.settings import settings
 
+# Create separate file logger for endpoints with better formatting
+endpoint_logger = logging.getLogger('endpoints')
+endpoint_handler = logging.FileHandler(os.path.join(os.path.dirname(os.path.dirname(__file__)), 'endpoints.log'))
+endpoint_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+endpoint_logger.addHandler(endpoint_handler)
+endpoint_logger.setLevel(logging.DEBUG)
+
+# Also add console output for endpoints
+endpoint_console_handler = logging.StreamHandler()
+endpoint_console_handler.setFormatter(logging.Formatter('%(asctime)s - ENDPOINTS - %(levelname)s - %(message)s'))
+endpoint_logger.addHandler(endpoint_console_handler)
+
 logger = logging.getLogger(__name__)
 router = APIRouter()
 
@@ -47,6 +59,10 @@ async def process_generation_task(task_id: str, image_path: str, audio_path: str
                                 bbox_shift: int, fps: int, batch_size: int):
     """Background task to process video generation"""
     try:
+        endpoint_logger.info(f"🔄 Starting background processing for task {task_id}")
+        endpoint_logger.info(f"  Image: {image_path}")
+        endpoint_logger.info(f"  Audio: {audio_path}")
+        
         # Update status to processing
         task_manager.update_task_status(task_id, TaskStatus.PROCESSING)
         
@@ -55,8 +71,10 @@ async def process_generation_task(task_id: str, image_path: str, audio_path: str
         temp_output_path = os.path.join(create_task_directory(task_id), output_filename)
         
         # Call model server
+        endpoint_logger.info(f"🌐 Calling model server for task {task_id}")
         async with httpx.AsyncClient(timeout=settings.MODEL_SERVER_TIMEOUT) as client:
             model_server_url = f"http://{settings.MODEL_SERVER_HOST}:{settings.MODEL_SERVER_PORT}"
+            endpoint_logger.info(f"Model server URL: {model_server_url}")
             
             generation_request = {
                 "task_id": task_id,
@@ -87,7 +105,7 @@ async def process_generation_task(task_id: str, image_path: str, audio_path: str
                         output_path=final_video_path
                     )
                     
-                    logger.info(f"Task {task_id} completed successfully")
+                    endpoint_logger.info(f"✅ Task {task_id} completed successfully - Video saved to: {final_video_path}")
                 else:
                     # Generation failed
                     task_manager.update_task_status(
@@ -95,17 +113,19 @@ async def process_generation_task(task_id: str, image_path: str, audio_path: str
                         TaskStatus.FAILED, 
                         error_message=result.get('message', 'Unknown error')
                     )
-                    logger.error(f"Task {task_id} failed: {result.get('message')}")
+                    endpoint_logger.error(f"❌ Task {task_id} generation failed: {result.get('message')}")
             else:
                 # HTTP error
                 error_msg = f"Model server error: {response.status_code}"
                 task_manager.update_task_status(task_id, TaskStatus.FAILED, error_message=error_msg)
-                logger.error(f"Task {task_id} failed: {error_msg}")
+                endpoint_logger.error(f"❌ Task {task_id} HTTP error: {error_msg}")
                 
     except Exception as e:
+        import traceback
         error_msg = f"Error processing task: {str(e)}"
         task_manager.update_task_status(task_id, TaskStatus.FAILED, error_message=error_msg)
-        logger.error(f"Task {task_id} failed: {error_msg}")
+        endpoint_logger.error(f"❌ Task {task_id} exception: {error_msg}")
+        endpoint_logger.error(f"Full traceback:\n{traceback.format_exc()}")
 
 @router.post("/generate", response_model=GenerateVideoResponse)
 async def generate_video(request: GenerateVideoRequest, background_tasks: BackgroundTasks):
@@ -113,7 +133,10 @@ async def generate_video(request: GenerateVideoRequest, background_tasks: Backgr
     try:
         # Generate unique task ID
         task_id = generate_unique_id()
-        logger.info(f"Creating generation task: {task_id}")
+        endpoint_logger.info(f"🎬 Creating new generation task: {task_id}")
+        endpoint_logger.info(f"  Image input: {request.image}")
+        endpoint_logger.info(f"  Audio input: {request.audio}")
+        endpoint_logger.info(f"  Parameters: bbox_shift={request.bbox_shift}, fps={request.fps}, batch_size={request.batch_size}")
         
         # Create task directory
         task_dir = create_task_directory(task_id)
@@ -124,7 +147,7 @@ async def generate_video(request: GenerateVideoRequest, background_tasks: Backgr
         
         # Download files if they are URLs
         if is_url(request.image):
-            logger.info(f"Downloading image from URL: {request.image}")
+            endpoint_logger.info(f"📥 Downloading image from URL: {request.image}")
             image_path = download_file(request.image, task_dir, 'image')
         else:
             # Check if local file exists
@@ -133,7 +156,7 @@ async def generate_video(request: GenerateVideoRequest, background_tasks: Backgr
             image_path = request.image
             
         if is_url(request.audio):
-            logger.info(f"Downloading audio from URL: {request.audio}")
+            endpoint_logger.info(f"📥 Downloading audio from URL: {request.audio}")
             audio_path = download_file(request.audio, task_dir, 'audio')
         else:
             # Check if local file exists
@@ -162,16 +185,19 @@ async def generate_video(request: GenerateVideoRequest, background_tasks: Backgr
             batch_size=request.batch_size
         )
         
-        return GenerateVideoResponse(
+        response = GenerateVideoResponse(
             status="accepted",
             task_id=task_id,
             message="Video generation started. Use /status/{task_id} to check progress."
         )
         
+        endpoint_logger.info(f"✅ Task {task_id} accepted and queued for processing")
+        return response
+        
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Error creating generation task: {str(e)}")
+        endpoint_logger.error(f"Error creating generation task: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.get("/status/{task_id}", response_model=TaskStatusResponse)
@@ -234,7 +260,7 @@ async def upload_file(file: UploadFile = File(...)):
         content = await file.read()
         buffer.write(content)
     
-    logger.info(f"File uploaded: {file.filename} -> {file_path}")
+    endpoint_logger.info(f"📎 File uploaded: {file.filename} -> {file_path}")
     
     return UploadResponse(
         status="success",

@@ -8,9 +8,9 @@ class Settings:
     HANDLER_SERVER_HOST: str = "0.0.0.0"
     HANDLER_SERVER_PORT: int = 8000
     
-    # MuseTalk paths
-    ROOT_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    MUSETALK_DIR = os.path.join(ROOT_DIR, 'MuseTalk')
+    # MuseTalk paths (fastapi_server is now inside MuseTalk)
+    FASTAPI_SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    MUSETALK_DIR = os.path.dirname(FASTAPI_SERVER_DIR)  # Parent of fastapi_server
     MODELS_DIR = os.path.join(MUSETALK_DIR, 'models')
     
     # Model paths
@@ -23,7 +23,6 @@ class Settings:
     FFMPEG_PATH = os.path.join(MUSETALK_DIR, 'ffmpeg-master-latest-linux64-gpl', 'bin')
     
     # Storage settings
-    FASTAPI_SERVER_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     STORAGE_DIR = os.path.join(FASTAPI_SERVER_DIR, 'storage')
     TEMP_DIR = os.path.join(STORAGE_DIR, 'temp')
     VIDEOS_DIR = os.path.join(STORAGE_DIR, 'videos')

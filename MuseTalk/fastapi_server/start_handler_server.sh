@@ -7,10 +7,10 @@ echo "Starting MuseTalk Handler Server..."
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 
 # Activate virtual environment
-source $SCRIPT_DIR/../.venv/bin/activate
+source $SCRIPT_DIR/../../.venv/bin/activate
 
-# Set PYTHONPATH to include fastapi_server
-export PYTHONPATH="$SCRIPT_DIR:$PYTHONPATH"
+# Set PYTHONPATH to include fastapi_server and MuseTalk
+export PYTHONPATH="$SCRIPT_DIR:$SCRIPT_DIR/..:$PYTHONPATH"
 
 # Start handler server from its directory
 cd $SCRIPT_DIR
