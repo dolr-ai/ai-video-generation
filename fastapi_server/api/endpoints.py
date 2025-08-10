@@ -1,0 +1,262 @@
+import os
+import logging
+import httpx
+from fastapi import APIRouter, HTTPException, File, UploadFile, BackgroundTasks
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from typing import Optional
+
+from core.task_manager import task_manager, TaskStatus
+from utils.file_utils import (
+    is_url, download_file, generate_unique_id, create_task_directory, 
+    save_video_file, is_allowed_file
+)
+from config.settings import settings
+
+logger = logging.getLogger(__name__)
+router = APIRouter()
+
+# Request/Response models
+class GenerateVideoRequest(BaseModel):
+    image: str  # URL or local path
+    audio: str  # URL or local path
+    bbox_shift: int = 0
+    fps: int = 25
+    batch_size: int = 8
+
+class GenerateVideoResponse(BaseModel):
+    status: str
+    task_id: str
+    message: str
+
+class TaskStatusResponse(BaseModel):
+    status: str
+    task_id: str
+    created_at: str
+    started_at: Optional[str] = None
+    completed_at: Optional[str] = None
+    output_path: Optional[str] = None
+    error_message: Optional[str] = None
+
+class UploadResponse(BaseModel):
+    status: str
+    file_path: str
+    filename: str
+
+async def process_generation_task(task_id: str, image_path: str, audio_path: str, 
+                                bbox_shift: int, fps: int, batch_size: int):
+    """Background task to process video generation"""
+    try:
+        # Update status to processing
+        task_manager.update_task_status(task_id, TaskStatus.PROCESSING)
+        
+        # Prepare output path
+        output_filename = f"generated_{task_id}.mp4"
+        temp_output_path = os.path.join(create_task_directory(task_id), output_filename)
+        
+        # Call model server
+        async with httpx.AsyncClient(timeout=settings.MODEL_SERVER_TIMEOUT) as client:
+            model_server_url = f"http://{settings.MODEL_SERVER_HOST}:{settings.MODEL_SERVER_PORT}"
+            
+            generation_request = {
+                "task_id": task_id,
+                "image_path": image_path,
+                "audio_path": audio_path,
+                "output_path": temp_output_path,
+                "bbox_shift": bbox_shift,
+                "fps": fps,
+                "batch_size": batch_size
+            }
+            
+            response = await client.post(
+                f"{model_server_url}/generate",
+                json=generation_request,
+                timeout=settings.GENERATION_TIMEOUT
+            )
+            
+            if response.status_code == 200:
+                result = response.json()
+                if result['status'] == 'success':
+                    # Save video to permanent storage
+                    final_video_path = save_video_file(task_id, temp_output_path, output_filename)
+                    
+                    # Update task status
+                    task_manager.update_task_status(
+                        task_id, 
+                        TaskStatus.COMPLETED, 
+                        output_path=final_video_path
+                    )
+                    
+                    logger.info(f"Task {task_id} completed successfully")
+                else:
+                    # Generation failed
+                    task_manager.update_task_status(
+                        task_id, 
+                        TaskStatus.FAILED, 
+                        error_message=result.get('message', 'Unknown error')
+                    )
+                    logger.error(f"Task {task_id} failed: {result.get('message')}")
+            else:
+                # HTTP error
+                error_msg = f"Model server error: {response.status_code}"
+                task_manager.update_task_status(task_id, TaskStatus.FAILED, error_message=error_msg)
+                logger.error(f"Task {task_id} failed: {error_msg}")
+                
+    except Exception as e:
+        error_msg = f"Error processing task: {str(e)}"
+        task_manager.update_task_status(task_id, TaskStatus.FAILED, error_message=error_msg)
+        logger.error(f"Task {task_id} failed: {error_msg}")
+
+@router.post("/generate", response_model=GenerateVideoResponse)
+async def generate_video(request: GenerateVideoRequest, background_tasks: BackgroundTasks):
+    """Generate talking head video"""
+    try:
+        # Generate unique task ID
+        task_id = generate_unique_id()
+        logger.info(f"Creating generation task: {task_id}")
+        
+        # Create task directory
+        task_dir = create_task_directory(task_id)
+        
+        # Process input files
+        image_path = request.image
+        audio_path = request.audio
+        
+        # Download files if they are URLs
+        if is_url(request.image):
+            logger.info(f"Downloading image from URL: {request.image}")
+            image_path = download_file(request.image, task_dir, 'image')
+        else:
+            # Check if local file exists
+            if not os.path.exists(request.image):
+                raise HTTPException(status_code=404, detail=f"Image file not found: {request.image}")
+            image_path = request.image
+            
+        if is_url(request.audio):
+            logger.info(f"Downloading audio from URL: {request.audio}")
+            audio_path = download_file(request.audio, task_dir, 'audio')
+        else:
+            # Check if local file exists
+            if not os.path.exists(request.audio):
+                raise HTTPException(status_code=404, detail=f"Audio file not found: {request.audio}")
+            audio_path = request.audio
+        
+        # Create task in task manager
+        task_manager.create_task(
+            task_id=task_id,
+            image_path=image_path,
+            audio_path=audio_path,
+            bbox_shift=request.bbox_shift,
+            fps=request.fps,
+            batch_size=request.batch_size
+        )
+        
+        # Start background processing
+        background_tasks.add_task(
+            process_generation_task,
+            task_id=task_id,
+            image_path=image_path,
+            audio_path=audio_path,
+            bbox_shift=request.bbox_shift,
+            fps=request.fps,
+            batch_size=request.batch_size
+        )
+        
+        return GenerateVideoResponse(
+            status="accepted",
+            task_id=task_id,
+            message="Video generation started. Use /status/{task_id} to check progress."
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating generation task: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/status/{task_id}", response_model=TaskStatusResponse)
+async def get_task_status(task_id: str):
+    """Get status of a generation task"""
+    task = task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    return TaskStatusResponse(
+        status=task.status.value,
+        task_id=task.task_id,
+        created_at=task.created_at,
+        started_at=task.started_at,
+        completed_at=task.completed_at,
+        output_path=task.output_path,
+        error_message=task.error_message
+    )
+
+@router.get("/video/{task_id}")
+async def get_video(task_id: str):
+    """Download generated video"""
+    task = task_manager.get_task(task_id)
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    if task.status != TaskStatus.COMPLETED:
+        raise HTTPException(status_code=400, detail=f"Task not completed. Status: {task.status}")
+    
+    if not task.output_path or not os.path.exists(task.output_path):
+        raise HTTPException(status_code=404, detail="Video file not found")
+    
+    return FileResponse(
+        task.output_path,
+        media_type='video/mp4',
+        filename=f"generated_{task_id}.mp4"
+    )
+
+@router.post("/upload", response_model=UploadResponse)
+async def upload_file(file: UploadFile = File(...)):
+    """Upload a file (image or audio)"""
+    # Check file type
+    file_type = None
+    if is_allowed_file(file.filename, 'image'):
+        file_type = 'image'
+    elif is_allowed_file(file.filename, 'audio'):
+        file_type = 'audio'
+    else:
+        raise HTTPException(status_code=400, detail="File type not allowed")
+    
+    # Generate unique filename and save
+    upload_id = generate_unique_id()
+    upload_dir = os.path.join(settings.UPLOADS_DIR, upload_id)
+    os.makedirs(upload_dir, exist_ok=True)
+    
+    file_path = os.path.join(upload_dir, file.filename)
+    
+    # Save file
+    with open(file_path, "wb") as buffer:
+        content = await file.read()
+        buffer.write(content)
+    
+    logger.info(f"File uploaded: {file.filename} -> {file_path}")
+    
+    return UploadResponse(
+        status="success",
+        file_path=file_path,
+        filename=file.filename
+    )
+
+@router.get("/health")
+async def health_check():
+    """Health check endpoint"""
+    try:
+        # Check model server
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            model_server_url = f"http://{settings.MODEL_SERVER_HOST}:{settings.MODEL_SERVER_PORT}"
+            response = await client.get(f"{model_server_url}/health")
+            model_health = response.json() if response.status_code == 200 else None
+    except:
+        model_health = None
+    
+    return {
+        "status": "healthy",
+        "service": "MuseTalk Handler Server",
+        "model_server": model_health,
+        "tasks_count": len(task_manager.get_all_tasks())
+    }
