@@ -1,0 +1,84 @@
+version: '3.8'
+
+services:
+  musetalk-fastapi:
+    build:
+      context: ../
+      dockerfile: docker/Dockerfile
+    image: musetalk-fastapi:latest
+    container_name: musetalk-fastapi
+    restart: unless-stopped
+    
+    # GPU support (required for MuseTalk inference)
+    runtime: nvidia
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    
+    # Port mapping (Handler: 8000, Model: 8001)
+    ports:
+      - "8000:8000"  # FastAPI Handler Server
+      - "8001:8001"  # MuseTalk Model Server
+    
+    # Volume mounts
+    volumes:
+      # Mount model weights directory (REQUIRED - download models first)
+      - ./models:/workspace/ai-video-generation/MuseTalk/models:ro
+      
+      # Mount storage for generated videos and uploads
+      - ./storage:/workspace/ai-video-generation/MuseTalk/fastapi_server/storage
+      
+      # Mount logs for debugging
+      - ./logs:/workspace/ai-video-generation/MuseTalk/fastapi_server/logs
+      
+      # Optional: Mount multimedia test files
+      - ../multimedia:/workspace/ai-video-generation/multimedia:ro
+    
+    # Resource limits (adjust based on your GPU)
+    deploy:
+      resources:
+        limits:
+          memory: 16G
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
+    
+    # Health check
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 120s
+    
+    # Logging configuration
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "100m"
+        max-file: "5"
+
+# Optional: Development override service
+  musetalk-dev:
+    extends: musetalk-fastapi
+    container_name: musetalk-dev
+    environment:
+      - NVIDIA_VISIBLE_DEVICES=all
+      - CUDA_VISIBLE_DEVICES=0
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+      - MUSETALK_DEBUG=1
+    volumes:
+      # Development: mount source code for live editing
+      - ../:/workspace/ai-video-generation:rw
+    profiles:
+      - dev
+
+# Networks (optional - for multi-container setups)
+networks:
+  default:
+    name: musetalk-network
