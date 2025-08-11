@@ -73,15 +73,11 @@ RUN uv pip install -r requirements.txt
 # Now copy the entire MuseTalk application
 COPY . /workspace/ai-video-generation/MuseTalk/
 
-# Create necessary directories
-RUN mkdir -p /workspace/ai-video-generation/MuseTalk/persistent/models \
-    /workspace/ai-video-generation/MuseTalk/persistent/storage/temp \
-    /workspace/ai-video-generation/MuseTalk/persistent/storage/videos \
-    /workspace/ai-video-generation/MuseTalk/persistent/storage/uploads
-
-# Create symlinks to persistent volume
-RUN ln -sf /workspace/ai-video-generation/MuseTalk/persistent/models /workspace/ai-video-generation/MuseTalk/models && \
-    ln -sf /workspace/ai-video-generation/MuseTalk/persistent/storage /workspace/ai-video-generation/MuseTalk/fastapi_server/storage
+# Create necessary directories (no persistent volume, just local storage)
+RUN mkdir -p /workspace/ai-video-generation/MuseTalk/models \
+    /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/temp \
+    /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/videos \
+    /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/uploads
 
 # Install tools for model downloading (including hf CLI)
 RUN uv pip install --upgrade huggingface_hub[cli] gdown
@@ -90,12 +86,16 @@ RUN uv pip install --upgrade huggingface_hub[cli] gdown
 COPY fly/download_models.sh /download_models.sh
 RUN chmod +x /download_models.sh
 
+# Download all models during build
+RUN echo "Downloading models during build..." && \
+    /download_models.sh && \
+    echo "Models downloaded successfully"
+
 # Copy startup script
 COPY fly/start-servers.sh /start-servers.sh
 RUN chmod +x /start-servers.sh
 
-# Create volume mount point for persistent data
-VOLUME ["/workspace/ai-video-generation/MuseTalk/persistent"]
+# No volumes - using ephemeral storage only
 
 # Make FastAPI scripts executable
 WORKDIR /workspace/ai-video-generation/MuseTalk/fastapi_server

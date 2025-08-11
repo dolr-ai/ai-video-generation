@@ -42,18 +42,11 @@ jobs:
     - name: Setup Fly CLI
       uses: superfly/flyctl-actions/setup-flyctl@master
 
-    - name: Create persistent volume
-      run: |
-        cd MuseTalk
-        echo "Setting up persistent volume..."
-
-        # Create combined models and storage volume if it doesn't exist
-        if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_models"; then
-          echo "Creating persistent volume for models and storage (150GB)..."
-          flyctl volumes create musetalk_models --size 150 --region iad --app talking-head-api -y
-        else
-          echo "Persistent volume already exists"
-        fi
+    # Skip volume creation - using ephemeral storage for now
+    # - name: Create persistent volume
+    #   run: |
+    #     cd MuseTalk
+    #     echo "Skipping volume creation - using ephemeral storage"
 
     - name: Deploy to Fly.io
       run: |
