@@ -1,4 +1,4 @@
-name: Deploy MuseTalk to Fly.io
+name: Deploy talking-head to Fly.io
 
 on:
   # Trigger on push to main branch
@@ -82,7 +82,7 @@ jobs:
       run: |
         cd MuseTalk
         echo "Deploying MuseTalk to Fly.io..."
-        flyctl deploy --config fly/fly.toml --app musetalk-api --ha=false
+        flyctl deploy --config Musetalk/fly/fly.toml --app musetalk-api --ha=false
 
     - name: Health check
       run: |
