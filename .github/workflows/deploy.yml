@@ -42,20 +42,11 @@ jobs:
     - name: Setup Fly CLI
       uses: superfly/flyctl-actions/setup-flyctl@master
 
-    - name: Check Fly.io authentication
-      run: |
-        echo "Checking Fly.io authentication..."
-        flyctl auth whoami
-
     - name: Create app if it doesn't exist
       run: |
         cd MuseTalk
-        if ! flyctl apps list | grep -q "musetalk-api"; then
-          echo "Creating new Fly app..."
-          flyctl apps create musetalk-api --org personal
-        else
-          echo "App musetalk-api already exists"
-        fi
+        echo "Creating app if it doesn't exist..."
+        flyctl apps create talking-head-api || echo "App already exists"
 
     - name: Create persistent volumes
       run: |
@@ -63,17 +54,17 @@ jobs:
         echo "Setting up persistent volumes..."
 
         # Create models volume if it doesn't exist
-        if ! flyctl volumes list --app musetalk-api | grep -q "musetalk_models"; then
+        if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_models"; then
           echo "Creating models volume (100GB)..."
-          flyctl volumes create musetalk_models --size 100 --region ord --app musetalk-api
+          flyctl volumes create musetalk_models --size 100 --region ord --app talking-head-api
         else
           echo "Models volume already exists"
         fi
 
         # Create storage volume if it doesn't exist
-        if ! flyctl volumes list --app musetalk-api | grep -q "musetalk_storage"; then
+        if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_storage"; then
           echo "Creating storage volume (50GB)..."
-          flyctl volumes create musetalk_storage --size 50 --region ord --app musetalk-api
+          flyctl volumes create musetalk_storage --size 50 --region ord --app talking-head-api
         else
           echo "Storage volume already exists"
         fi
@@ -82,7 +73,7 @@ jobs:
       run: |
         cd MuseTalk
         echo "Deploying MuseTalk to Fly.io..."
-        flyctl deploy --config Musetalk/fly/fly.toml --app musetalk-api --ha=false
+        flyctl deploy --config fly/fly.toml --app talking-head-api --ha=false
 
     - name: Health check
       run: |
@@ -90,7 +81,7 @@ jobs:
         sleep 30  # Wait for deployment to complete
 
         # Get app URL
-        APP_URL=$(flyctl info --app musetalk-api --json | jq -r '.Hostname')
+        APP_URL=$(flyctl info --app talking-head-api --json | jq -r '.Hostname')
 
         if [ "$APP_URL" != "null" ] && [ ! -z "$APP_URL" ]; then
           echo "App URL: https://$APP_URL"
@@ -119,7 +110,7 @@ jobs:
       if: success()
       run: |
         cd MuseTalk
-        APP_URL=$(flyctl info --app musetalk-api --json | jq -r '.Hostname')
+        APP_URL=$(flyctl info --app talking-head-api --json | jq -r '.Hostname')
 
         echo "=========================================="
         echo "🚀 MuseTalk API deployed successfully!"
@@ -129,8 +120,8 @@ jobs:
         echo "Docs: https://$APP_URL/docs"
         echo ""
         echo "To monitor:"
-        echo "  flyctl logs --app musetalk-api"
-        echo "  flyctl status --app musetalk-api"
+        echo "  flyctl logs --app talking-head-api"
+        echo "  flyctl status --app talking-head-api"
         echo "=========================================="
 
     - name: Notify on failure
@@ -139,5 +130,5 @@ jobs:
         echo "❌ Deployment failed!"
         echo "Check the logs above for details."
         echo "You can also check:"
-        echo "  flyctl logs --app musetalk-api"
-        echo "  flyctl status --app musetalk-api"
+        echo "  flyctl logs --app talking-head-api"
+        echo "  flyctl status --app talking-head-api"
