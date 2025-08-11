@@ -52,7 +52,8 @@ jobs:
       run: |
         cd MuseTalk
         echo "Deploying MuseTalk to Fly.io..."
-        flyctl deploy --config fly/fly.toml --app talking-head-api --ha=false
+        # Increased timeout to 30 minutes for model downloads and startup
+        flyctl deploy --config fly/fly.toml --app talking-head-api --ha=false --wait-timeout 1800
 
     - name: Health check
       run: |
