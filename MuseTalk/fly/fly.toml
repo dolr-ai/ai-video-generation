@@ -59,14 +59,9 @@ kill_timeout = 30
   cpus = 4
   
 [[mounts]]
-  # Persistent volume for models to avoid re-downloading
+  # Persistent volume for models and storage
   source = "musetalk_models"
-  destination = "/workspace/ai-video-generation/MuseTalk/models"
-  
-[[mounts]]
-  # Persistent storage for generated videos
-  source = "musetalk_storage"
-  destination = "/workspace/ai-video-generation/MuseTalk/fastapi_server/storage"
+  destination = "/workspace/ai-video-generation/MuseTalk/persistent"
 
 # Fly.io metrics
 [metrics]

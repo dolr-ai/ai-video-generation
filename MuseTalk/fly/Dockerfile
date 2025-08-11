@@ -74,16 +74,14 @@ RUN uv pip install -r requirements.txt
 COPY . /workspace/ai-video-generation/MuseTalk/
 
 # Create necessary directories
-RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/temp \
-    /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/videos \
-    /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/uploads \
-    /workspace/ai-video-generation/MuseTalk/models/musetalk \
-    /workspace/ai-video-generation/MuseTalk/models/musetalkV15 \
-    /workspace/ai-video-generation/MuseTalk/models/syncnet \
-    /workspace/ai-video-generation/MuseTalk/models/dwpose \
-    /workspace/ai-video-generation/MuseTalk/models/face-parse-bisent \
-    /workspace/ai-video-generation/MuseTalk/models/sd-vae \
-    /workspace/ai-video-generation/MuseTalk/models/whisper
+RUN mkdir -p /workspace/ai-video-generation/MuseTalk/persistent/models \
+    /workspace/ai-video-generation/MuseTalk/persistent/storage/temp \
+    /workspace/ai-video-generation/MuseTalk/persistent/storage/videos \
+    /workspace/ai-video-generation/MuseTalk/persistent/storage/uploads
+
+# Create symlinks to persistent volume
+RUN ln -sf /workspace/ai-video-generation/MuseTalk/persistent/models /workspace/ai-video-generation/MuseTalk/models && \
+    ln -sf /workspace/ai-video-generation/MuseTalk/persistent/storage /workspace/ai-video-generation/MuseTalk/fastapi_server/storage
 
 # Install tools for model downloading (including hf CLI)
 RUN uv pip install --upgrade huggingface_hub[cli] gdown
@@ -96,9 +94,8 @@ RUN chmod +x /download_models.sh
 COPY fly/start-servers.sh /start-servers.sh
 RUN chmod +x /start-servers.sh
 
-# Create volume mount points for models (to avoid re-downloading)
-VOLUME ["/workspace/ai-video-generation/MuseTalk/models"]
-VOLUME ["/workspace/ai-video-generation/MuseTalk/fastapi_server/storage"]
+# Create volume mount point for persistent data
+VOLUME ["/workspace/ai-video-generation/MuseTalk/persistent"]
 
 # Make FastAPI scripts executable
 WORKDIR /workspace/ai-video-generation/MuseTalk/fastapi_server
