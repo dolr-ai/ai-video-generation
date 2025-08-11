@@ -2,7 +2,7 @@
 # Single GPU-enabled machine running both servers
 
 app = 'talking-head-api'
-primary_region = 'ord'  # Chicago - good GPU availability
+primary_region = 'iad'  # Washington DC - try different region
 kill_signal = 'SIGINT'
 kill_timeout = 30
 

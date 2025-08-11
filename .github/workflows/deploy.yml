@@ -50,7 +50,7 @@ jobs:
         # Create combined models and storage volume if it doesn't exist
         if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_models"; then
           echo "Creating persistent volume for models and storage (150GB)..."
-          flyctl volumes create musetalk_models --size 150 --region ord --app talking-head-api -y
+          flyctl volumes create musetalk_models --size 150 --region iad --app talking-head-api -y
         else
           echo "Persistent volume already exists"
         fi
