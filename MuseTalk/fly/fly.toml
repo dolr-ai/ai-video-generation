@@ -54,7 +54,7 @@ kill_timeout = 30
 
 # Machine configuration with GPU
 [[vm]]
-  size = "a10"  # GPU machine with A10
+  size = "l40s"  # GPU machine with L40S - more powerful than A10
   memory = "16gb"
   cpus = 4
   
