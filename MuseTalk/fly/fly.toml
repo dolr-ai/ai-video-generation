@@ -1,7 +1,7 @@
 # fly.toml configuration for MuseTalk FastAPI Server
 # Single GPU-enabled machine running both servers
 
-app = 'musetalk-api'
+app = 'talking-head-api'
 primary_region = 'ord'  # Chicago - good GPU availability
 kill_signal = 'SIGINT'
 kill_timeout = 30
