@@ -58,11 +58,12 @@ kill_timeout = 30
   memory = "16gb"
   cpus = 4
   
-[mounts]
+[[mounts]]
   # Persistent volume for models to avoid re-downloading
   source = "musetalk_models"
   destination = "/workspace/ai-video-generation/MuseTalk/models"
   
+[[mounts]]
   # Persistent storage for generated videos
   source = "musetalk_storage"
   destination = "/workspace/ai-video-generation/MuseTalk/fastapi_server/storage"
