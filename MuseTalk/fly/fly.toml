@@ -2,7 +2,7 @@
 # Single GPU-enabled machine running both servers
 
 app = 'talking-head-api'
-primary_region = 'iad'  # Washington DC - try different region
+primary_region = 'ord'
 kill_signal = 'SIGINT'
 kill_timeout = 30
 
@@ -14,7 +14,7 @@ kill_timeout = 30
   # Python environment
   PYTHONUNBUFFERED = "1"
   PYTHONDONTWRITEBYTECODE = "1"
-  
+
   # NVIDIA settings - allow access to all GPUs
   NVIDIA_VISIBLE_DEVICES = "all"
   NVIDIA_DRIVER_CAPABILITIES = "compute,utility"
@@ -30,7 +30,7 @@ kill_timeout = 30
   auto_stop_machines = false
   auto_start_machines = true
   min_machines_running = 1
-  
+
   [services.concurrency]
     type = "connections"
     hard_limit = 25
@@ -57,7 +57,7 @@ kill_timeout = 30
   size = "l40s"  # GPU machine with L40S - more powerful than A10
   memory = "16gb"
   cpus = 4
-  
+
 # No persistent volumes - ephemeral storage only
 # [[mounts]]
 #   source = "musetalk_models"
