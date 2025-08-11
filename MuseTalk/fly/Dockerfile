@@ -39,8 +39,8 @@ RUN pip install uv==0.7.16
 WORKDIR /workspace/ai-video-generation
 
 # Copy only necessary files first for better caching
-COPY MuseTalk/requirements.txt /workspace/ai-video-generation/MuseTalk/
-COPY MuseTalk/fastapi_server/requirements.txt /workspace/ai-video-generation/MuseTalk/fastapi_server/
+COPY requirements.txt /workspace/ai-video-generation/MuseTalk/
+COPY fastapi_server/requirements.txt /workspace/ai-video-generation/MuseTalk/fastapi_server/
 
 # Create virtual environment
 WORKDIR /workspace/ai-video-generation/MuseTalk
@@ -71,7 +71,7 @@ WORKDIR /workspace/ai-video-generation/MuseTalk/fastapi_server
 RUN uv pip install -r requirements.txt
 
 # Now copy the entire MuseTalk application
-COPY MuseTalk/ /workspace/ai-video-generation/MuseTalk/
+COPY . /workspace/ai-video-generation/MuseTalk/
 
 # Create necessary directories
 RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/temp \
