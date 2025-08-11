@@ -112,4 +112,4 @@ HEALTHCHECK --interval=30s --timeout=10s --start-period=300s --retries=3 \
 WORKDIR /workspace/ai-video-generation/MuseTalk
 
 # Start both servers with bash script
-CMD ["/start-servers.sh"]
+CMD ["/bin/bash", "/start-servers.sh"]

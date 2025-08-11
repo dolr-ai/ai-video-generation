@@ -2,6 +2,10 @@
 set -e
 
 echo "🚀 Starting MuseTalk FastAPI Servers on Fly.io..."
+echo "Current directory: $(pwd)"
+echo "Script path: $0"
+echo "Environment:"
+env | grep -E "(PORT|HOST|PYTHONPATH)" || true
 
 # Ensure models directory exists
 mkdir -p /workspace/ai-video-generation/MuseTalk/models
