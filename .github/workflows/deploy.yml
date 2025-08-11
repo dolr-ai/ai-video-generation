@@ -48,17 +48,17 @@ jobs:
         echo "Setting up persistent volumes..."
 
         # Create models volume if it doesn't exist
-        if ! flyctl volumes list --app talking-head-api --org yral-ds | grep -q "musetalk_models"; then
+        if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_models"; then
           echo "Creating models volume (100GB)..."
-          flyctl volumes create musetalk_models --size 100 --region ord --app talking-head-api --org yral-ds
+          flyctl volumes create musetalk_models --size 100 --region ord --app talking-head-api
         else
           echo "Models volume already exists"
         fi
 
         # Create storage volume if it doesn't exist
-        if ! flyctl volumes list --app talking-head-api --org yral-ds | grep -q "musetalk_storage"; then
+        if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_storage"; then
           echo "Creating storage volume (50GB)..."
-          flyctl volumes create musetalk_storage --size 50 --region ord --app talking-head-api --org yral-ds
+          flyctl volumes create musetalk_storage --size 50 --region ord --app talking-head-api
         else
           echo "Storage volume already exists"
         fi
