@@ -63,6 +63,8 @@ ENV PATH="$VIRTUAL_ENV/bin:$PATH"
 RUN uv pip install torch==2.0.1 torchvision==0.15.2 torchaudio==2.0.2 --index-url https://download.pytorch.org/whl/cu118
 
 # Step 5: Install Requirements from requirements.txt (exact command from docs)
+# Debug: List files to see what's available
+RUN pwd && ls -la && echo "Looking for requirements.txt:" && find . -name "requirements.txt" -type f
 RUN uv pip install -r requirements.txt
 
 # Step 6: Install MMLab Packages (exact commands from docs)
