@@ -46,40 +46,16 @@ jobs:
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
     
-    - name: Create GCS bucket if not exists
+    - name: Verify GCS bucket access
       run: |
         BUCKET_NAME="${{ env.GCS_BUCKET }}"
-        PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
-        REGION="${{ env.GCP_REGION }}"
-        
-        echo "Checking if bucket gs://${BUCKET_NAME} exists..."
-        if ! gsutil ls -b "gs://${BUCKET_NAME}" 2>/dev/null; then
-          echo "Creating bucket gs://${BUCKET_NAME}"
-          gsutil mb -p "${PROJECT_ID}" -l "${REGION}" "gs://${BUCKET_NAME}"
-          
-          # Enable versioning for safety
-          gsutil versioning set on "gs://${BUCKET_NAME}"
-          
-          # Set lifecycle to delete old versions after 30 days
-          cat > lifecycle.json << EOF
-        {
-          "lifecycle": {
-            "rule": [
-              {
-                "action": {"type": "Delete"},
-                "condition": {
-                  "age": 30,
-                  "isLive": false
-                }
-              }
-            ]
-          }
+        echo "Verifying access to bucket gs://${BUCKET_NAME}..."
+        gsutil ls -b "gs://${BUCKET_NAME}" || {
+          echo "❌ Cannot access bucket gs://${BUCKET_NAME}"
+          echo "Please ensure the bucket exists and service account has access"
+          exit 1
         }
-        EOF
-          gsutil lifecycle set lifecycle.json "gs://${BUCKET_NAME}"
-        else
-          echo "Bucket gs://${BUCKET_NAME} already exists"
-        fi
+        echo "✅ Bucket access verified"
     
     - name: Download MuseTalk models
       run: |
