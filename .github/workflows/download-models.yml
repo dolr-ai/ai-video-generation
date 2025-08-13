@@ -11,7 +11,7 @@ on:
       
 
 env:
-  GCS_BUCKET: ${{ github.event.inputs.bucket_name || 'musetalk-models' }}
+  GCS_BUCKET: ${{ secrets.GCS_BUCKET || github.event.inputs.bucket_name || 'talking-head-models' }}
   GCP_REGION: us-central1
 
 jobs:
@@ -48,12 +48,17 @@ jobs:
     
     - name: Create GCS bucket if not exists
       run: |
-        if ! gsutil ls -b gs://${GCS_BUCKET} 2>/dev/null; then
-          echo "Creating bucket gs://${GCS_BUCKET}"
-          gsutil mb -p ${{ secrets.GCP_PROJECT_ID }} -l ${GCP_REGION} gs://${GCS_BUCKET}
+        BUCKET_NAME="${{ env.GCS_BUCKET }}"
+        PROJECT_ID="${{ secrets.GCP_PROJECT_ID }}"
+        REGION="${{ env.GCP_REGION }}"
+        
+        echo "Checking if bucket gs://${BUCKET_NAME} exists..."
+        if ! gsutil ls -b "gs://${BUCKET_NAME}" 2>/dev/null; then
+          echo "Creating bucket gs://${BUCKET_NAME}"
+          gsutil mb -p "${PROJECT_ID}" -l "${REGION}" "gs://${BUCKET_NAME}"
           
           # Enable versioning for safety
-          gsutil versioning set on gs://${GCS_BUCKET}
+          gsutil versioning set on "gs://${BUCKET_NAME}"
           
           # Set lifecycle to delete old versions after 30 days
           cat > lifecycle.json << EOF
@@ -71,9 +76,9 @@ jobs:
           }
         }
         EOF
-          gsutil lifecycle set lifecycle.json gs://${GCS_BUCKET}
+          gsutil lifecycle set lifecycle.json "gs://${BUCKET_NAME}"
         else
-          echo "Bucket gs://${GCS_BUCKET} already exists"
+          echo "Bucket gs://${BUCKET_NAME} already exists"
         fi
     
     - name: Download MuseTalk models
@@ -181,21 +186,22 @@ jobs:
     
     - name: Upload models to GCS
       run: |
-        echo "Uploading models to gs://${GCS_BUCKET}/models/"
+        BUCKET_NAME="${{ env.GCS_BUCKET }}"
+        echo "Uploading models to gs://${BUCKET_NAME}/models/"
         
         # Upload with parallel transfers for speed
         gsutil -m -o "GSUtil:parallel_thread_count=10" \
           -o "GSUtil:parallel_process_count=4" \
-          cp -r models/* gs://${GCS_BUCKET}/models/
+          cp -r models/* "gs://${BUCKET_NAME}/models/"
         
         # Upload checksums
-        gsutil cp model_checksums.txt gs://${GCS_BUCKET}/
+        gsutil cp model_checksums.txt "gs://${BUCKET_NAME}/"
         
         echo "✅ Models uploaded successfully"
         
         # List uploaded files
         echo "Uploaded files:"
-        gsutil ls -lh gs://${GCS_BUCKET}/models/**
+        gsutil ls -lh "gs://${BUCKET_NAME}/models/**"
     
     - name: Create model metadata
       run: |
@@ -234,13 +240,14 @@ jobs:
               "files": ["pytorch_model.bin"]
             }
           },
-          "gcs_bucket": "${GCS_BUCKET}",
-          "gcs_path": "gs://${GCS_BUCKET}/models/"
+          "gcs_bucket": "${{ env.GCS_BUCKET }}",
+          "gcs_path": "gs://${{ env.GCS_BUCKET }}/models/"
         }
         EOF
         
         # Upload metadata
-        gsutil cp model_metadata.json gs://${GCS_BUCKET}/
+        BUCKET_NAME="${{ env.GCS_BUCKET }}"
+        gsutil cp model_metadata.json "gs://${BUCKET_NAME}/"
         
         echo "✅ Model metadata uploaded"
     
@@ -250,7 +257,7 @@ jobs:
         # RunPod Volume Setup Instructions
         
         ## Model Storage Information
-        - **GCS Bucket**: \`gs://${GCS_BUCKET}\`
+        - **GCS Bucket**: \`gs://${{ env.GCS_BUCKET }}\`
         - **Total Models**: $(find models -type f | wc -l) files
         - **Upload Time**: $(date -u +%Y-%m-%dT%H:%M:%SZ)
         
@@ -268,19 +275,19 @@ jobs:
         gcloud auth activate-service-account --key-file=/path/to/key.json
         
         # Download models to volume
-        gsutil -m cp -r gs://${GCS_BUCKET}/models/* /workspace/models/
+        gsutil -m cp -r gs://${{ env.GCS_BUCKET }}/models/* /workspace/models/
         \`\`\`
         
         ### Option 2: Using RunPod Cloud Sync
         1. Configure Cloud Sync in RunPod to sync from GCS
-        2. Set source: \`gs://${GCS_BUCKET}/models\`
+        2. Set source: \`gs://${{ env.GCS_BUCKET }}/models\`
         3. Set destination: \`/workspace/models\`
         
         ### Option 3: Direct Mount (if supported)
         Configure GCS FUSE in your container:
         \`\`\`bash
         # In your Dockerfile or startup script
-        gcsfuse --implicit-dirs ${GCS_BUCKET} /workspace/models
+        gcsfuse --implicit-dirs ${{ env.GCS_BUCKET }} /workspace/models
         \`\`\`
         
         ## Verifying Models
@@ -314,8 +321,8 @@ jobs:
         echo "## 📦 Model Upload Summary" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Storage Location" >> $GITHUB_STEP_SUMMARY
-        echo "- **GCS Bucket**: \`gs://${GCS_BUCKET}\`" >> $GITHUB_STEP_SUMMARY
-        echo "- **Models Path**: \`gs://${GCS_BUCKET}/models/\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **GCS Bucket**: \`gs://${{ env.GCS_BUCKET }}\`" >> $GITHUB_STEP_SUMMARY
+        echo "- **Models Path**: \`gs://${{ env.GCS_BUCKET }}/models/\`" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Models Uploaded" >> $GITHUB_STEP_SUMMARY
         echo "- MuseTalk (v1.0 and v1.5)" >> $GITHUB_STEP_SUMMARY
