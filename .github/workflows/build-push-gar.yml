@@ -26,7 +26,7 @@ env:
   # Google Artifact Registry configuration
   GAR_LOCATION: us-central1
   GAR_REPOSITORY: talking-head-registry
-  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  PROJECT_ID: jay-dhanwant-experiments
   IMAGE_NAME: musetalk-api
 
 jobs:
@@ -75,22 +75,9 @@ jobs:
         # Create models directory in MuseTalk context
         mkdir -p ./MuseTalk/models
         
-        # List bucket contents first to verify access
-        echo "Listing bucket contents..."
-        gsutil ls "gs://${BUCKET_NAME}/" || echo "Failed to list bucket"
-        
-        # Download all models from GCS
+        # Download all models from GCS using gcloud storage (more reliable than gsutil)
         echo "Downloading models..."
-        gsutil -m cp -r "gs://${BUCKET_NAME}/models/" ./MuseTalk/ || {
-          echo "❌ Failed to download models from GCS"
-          echo "Debugging info:"
-          echo "GOOGLE_APPLICATION_CREDENTIALS: $GOOGLE_APPLICATION_CREDENTIALS"
-          echo "Trying with gcloud storage instead..."
-          gcloud storage cp -r "gs://${BUCKET_NAME}/models/" ./MuseTalk/ || {
-            echo "Both gsutil and gcloud storage failed"
-            exit 1
-          }
-        }
+        gcloud storage cp -r "gs://${BUCKET_NAME}/models/" ./MuseTalk/
         
         # Verify models were downloaded
         echo "📂 Downloaded models:"
