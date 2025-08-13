@@ -58,10 +58,18 @@ jobs:
       with:
         credentials_json: ${{ secrets.GCP_CREDENTIALS }}
 
-
-    - name: Configure Docker to use gcloud as credential helper
+    - name: Configure gcloud and Docker
       run: |
+        # Activate service account explicitly
+        echo '${{ secrets.GCP_CREDENTIALS }}' > /tmp/gcp-key.json
+        gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+        gcloud config set project ${{ secrets.GCP_PROJECT_ID }}
+        
+        # Configure Docker
         gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
+        
+        # Clean up key file
+        rm /tmp/gcp-key.json
     
     - name: Download models from GCS
       run: |
