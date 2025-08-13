@@ -71,8 +71,8 @@ jobs:
         # Create models directory in MuseTalk context
         mkdir -p ./MuseTalk/models
         
-        # Download all models from GCS
-        gsutil -m cp -r "gs://${BUCKET_NAME}/models/*" ./MuseTalk/models/ || {
+        # Download all models from GCS (remove the /* to copy the directory contents)
+        gsutil -m cp -r "gs://${BUCKET_NAME}/models/" ./MuseTalk/ || {
           echo "❌ Failed to download models from GCS"
           echo "Make sure the models workflow has been run first"
           exit 1
