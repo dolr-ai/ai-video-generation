@@ -4,9 +4,9 @@ on:
   workflow_dispatch:
     inputs:
       bucket_name:
-        description: 'GCS bucket name for models'
-        required: true
-        default: 'musetalk-models'
+        description: 'GCS bucket name for models (optional - uses secret if not provided)'
+        required: false
+        default: 'talking-head-models'
         type: string
       
 
