@@ -62,26 +62,47 @@ jobs:
       run: |
         gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
     
-    - name: Download models from GCS
+    - name: Free up disk space
+      run: |
+        echo "🗑️ Freeing up disk space..."
+        # Remove unused Docker images
+        docker system prune -af
+        # Remove unused packages
+        sudo apt-get clean
+        sudo rm -rf /var/lib/apt/lists/*
+        # Show available space
+        df -h
+        
+    - name: Download essential models only from GCS
       run: |
         BUCKET_NAME="${{ secrets.GCS_BUCKET || 'talking-head-models' }}"
-        echo "📥 Downloading models from gs://${BUCKET_NAME}/models..."
+        echo "📥 Downloading essential models from gs://${BUCKET_NAME}/models..."
         
-        # Debug: Check authentication
-        echo "Current auth:"
-        gcloud auth list
-        echo "Project: $(gcloud config get-value project)"
+        # Create models directory in MuseTalk context  
+        mkdir -p ./MuseTalk/models/{musetalk,musetalkV15,syncnet,dwpose,face-parse-bisent,sd-vae,whisper}
         
-        # Create models directory in MuseTalk context
-        mkdir -p ./MuseTalk/models
+        # Download only essential model files (not cache files)
+        echo "Downloading core models..."
+        gcloud storage cp "gs://${BUCKET_NAME}/models/musetalk/pytorch_model.bin" ./MuseTalk/models/musetalk/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/musetalk/musetalk.json" ./MuseTalk/models/musetalk/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/musetalkV15/unet.pth" ./MuseTalk/models/musetalkV15/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/musetalkV15/musetalk.json" ./MuseTalk/models/musetalkV15/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/syncnet/latentsync_syncnet.pt" ./MuseTalk/models/syncnet/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/dwpose/dw-ll_ucoco_384.pth" ./MuseTalk/models/dwpose/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/face-parse-bisent/79999_iter.pth" ./MuseTalk/models/face-parse-bisent/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/face-parse-bisent/resnet18-5c106cde.pth" ./MuseTalk/models/face-parse-bisent/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/sd-vae/diffusion_pytorch_model.bin" ./MuseTalk/models/sd-vae/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/sd-vae/config.json" ./MuseTalk/models/sd-vae/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/whisper/pytorch_model.bin" ./MuseTalk/models/whisper/ || true
+        gcloud storage cp "gs://${BUCKET_NAME}/models/whisper/config.json" ./MuseTalk/models/whisper/ || true
         
-        # Download all models from GCS using gcloud storage (more reliable than gsutil)
-        echo "Downloading models..."
-        gcloud storage cp -r "gs://${BUCKET_NAME}/models/" ./MuseTalk/
+        # Verify essential models were downloaded
+        echo "📂 Downloaded essential models:"
+        find ./MuseTalk/models -name "*.pth" -o -name "*.bin" -o -name "*.pt" | head -10
         
-        # Verify models were downloaded
-        echo "📂 Downloaded models:"
-        ls -la ./MuseTalk/models/
+        # Show disk usage
+        du -sh ./MuseTalk/models/
+        df -h
         
         # Check for critical model files
         if [ ! -f "./MuseTalk/models/musetalk/pytorch_model.bin" ]; then
