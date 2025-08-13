@@ -15,13 +15,40 @@ echo "  Working directory: $(pwd)"
 echo "  CUDA available: $(python -c 'import torch; print(torch.cuda.is_available())')"
 echo "  Virtual environment: $VIRTUAL_ENV"
 
-# Check if models exist
+# Check if models exist - warn but don't fail (models might be downloaded later)
 echo "📂 Checking model files:"
-if [ ! -d "/workspace/ai-video-generation/MuseTalk/models/musetalkV15" ]; then
-    echo "❌ ERROR: Model weights not found!"
-    echo "   Please mount model weights to /workspace/ai-video-generation/MuseTalk/models"
-    echo "   Example: -v /path/to/your/models:/workspace/ai-video-generation/MuseTalk/models"
-    exit 1
+MODELS_DIR="${MODELS_PATH:-/workspace/ai-video-generation/MuseTalk/models}"
+
+if [ ! -d "$MODELS_DIR" ]; then
+    echo "⚠️  WARNING: Models directory not found at $MODELS_DIR"
+    echo "   Creating directory structure..."
+    mkdir -p "$MODELS_DIR"/{musetalk,musetalkV15,syncnet,dwpose,face-parse-bisent,sd-vae,whisper}
+fi
+
+# Check if models are mounted or need to be downloaded
+if [ ! -f "$MODELS_DIR/musetalkV15/unet.pth" ]; then
+    echo "⚠️  WARNING: Model weights not found in $MODELS_DIR"
+    echo "   Models can be:"
+    echo "   1. Mounted as a volume: -v /path/to/models:$MODELS_DIR"
+    echo "   2. Downloaded from GCS if GCS_BUCKET is set"
+    echo "   3. Downloaded manually inside the container"
+    
+    # Try to download from GCS if bucket is configured
+    if [ ! -z "$GCS_BUCKET" ]; then
+        echo "📥 Attempting to download models from GCS bucket: $GCS_BUCKET"
+        if command -v gsutil &> /dev/null; then
+            gsutil -m cp -r "gs://$GCS_BUCKET/models/*" "$MODELS_DIR/" || {
+                echo "⚠️  Failed to download from GCS"
+            }
+        else
+            echo "⚠️  gsutil not available for GCS download"
+        fi
+    fi
+    
+    # Continue anyway - models might be downloaded through API later
+    echo "⚠️  Continuing without models - they may be downloaded on first use"
+else
+    echo "✅ Models found in $MODELS_DIR"
 fi
 
 # Verify required model files exist

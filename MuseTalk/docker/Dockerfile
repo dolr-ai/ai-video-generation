@@ -1,5 +1,13 @@
-# MuseTalk FastAPI Server Dockerfile
+# MuseTalk FastAPI Server Dockerfile with Volume Support
 # Following exact setup steps from docs/venv_setup.md and docs/fastapi_setup.md
+#
+# VOLUME USAGE:
+# This image expects models to be mounted as volumes:
+#   docker run -v /path/to/models:/workspace/ai-video-generation/MuseTalk/models \
+#              -v /path/to/storage:/workspace/ai-video-generation/MuseTalk/fastapi_server/storage \
+#              musetalk-api
+#
+# Models should be pre-downloaded and placed in the volume before running
 
 FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
@@ -8,6 +16,8 @@ ENV DEBIAN_FRONTEND=noninteractive
 ENV PYTHONUNBUFFERED=1
 ENV CUDA_VISIBLE_DEVICES=0
 ENV PYTHONDONTWRITEBYTECODE=1
+# Support external model volumes
+ENV MODELS_PATH=/workspace/ai-video-generation/MuseTalk/models
 
 # Install system dependencies (matching docs/venv_setup.md requirements)
 RUN apt-get update && apt-get install -y \
@@ -81,9 +91,13 @@ RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/temp
 RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/videos  
 RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/uploads
 
-# Create models directory structure (Step 7 equivalent - models download preparation)
+# Create models directory structure
 WORKDIR /workspace/ai-video-generation/MuseTalk
 RUN mkdir -p models/musetalk models/musetalkV15 models/syncnet models/dwpose models/face-parse-bisent models/sd-vae models/whisper
+
+# Copy models if they exist (they should be downloaded from GCS before build)
+# This makes the image self-contained with models
+COPY models* /workspace/ai-video-generation/MuseTalk/models/
 
 # Make startup scripts executable (from docs/fastapi_setup.md Step 10)
 WORKDIR /workspace/ai-video-generation/MuseTalk/fastapi_server
@@ -92,8 +106,10 @@ RUN chmod +x start_model_server.sh start_handler_server.sh
 # Install additional tools for model weight downloading (Step 10 preparation)
 RUN uv pip install huggingface_hub gdown
 
-# Create volume mount points for models (to avoid downloading in container)
+# Declare volumes for models and storage
+# Models volume: Mount your pre-downloaded models here
 VOLUME ["/workspace/ai-video-generation/MuseTalk/models"]
+# Storage volume: For generated videos and temporary files
 VOLUME ["/workspace/ai-video-generation/MuseTalk/fastapi_server/storage"]
 
 # Expose FastAPI server ports (from docs - Model server: 8001, Handler server: 8000)

@@ -1,0 +1,218 @@
+name: Build and Push to Google Artifact Registry
+
+on:
+  push:
+    branches: [ main, talking-head ]
+    paths:
+      - 'MuseTalk/docker/**'
+      - 'MuseTalk/fastapi_server/**'
+      - 'MuseTalk/requirements.txt'
+      - '.github/workflows/build-push-gar.yml'
+
+  workflow_dispatch:
+    inputs:
+      image_tag:
+        description: 'Docker image tag'
+        required: false
+        default: 'latest'
+        type: string
+  
+  workflow_run:
+    workflows: ["Download and Upload Models to GCS"]
+    types:
+      - completed
+
+env:
+  # Google Artifact Registry configuration
+  GAR_LOCATION: us-central1
+  GAR_REPOSITORY: talking-head-registry
+  PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  IMAGE_NAME: musetalk-api
+
+jobs:
+  build-and-push:
+    name: Build and Push Docker Image
+    runs-on: ubuntu-latest
+
+    permissions:
+      contents: read
+      # id-token: write  # Not needed with service account key
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+      with:
+        driver-opts: network=host
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    # Authenticate to Google Cloud using service account key
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+
+    - name: Configure Docker to use gcloud as credential helper
+      run: |
+        gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
+    
+    - name: Download models from GCS
+      run: |
+        BUCKET_NAME="${{ secrets.GCS_BUCKET || 'talking-head-models' }}"
+        echo "📥 Downloading models from gs://${BUCKET_NAME}/models..."
+        
+        # Create models directory in MuseTalk context
+        mkdir -p ./MuseTalk/models
+        
+        # Download all models from GCS
+        gsutil -m cp -r "gs://${BUCKET_NAME}/models/*" ./MuseTalk/models/ || {
+          echo "❌ Failed to download models from GCS"
+          echo "Make sure the models workflow has been run first"
+          exit 1
+        }
+        
+        # Verify models were downloaded
+        echo "📂 Downloaded models:"
+        ls -la ./MuseTalk/models/
+        
+        # Check for critical model files
+        if [ ! -f "./MuseTalk/models/musetalk/pytorch_model.bin" ]; then
+          echo "❌ Critical model files missing"
+          exit 1
+        fi
+        
+        echo "✅ Models downloaded successfully"
+
+    - name: Generate image metadata
+      id: meta
+      run: |
+        # Generate tag based on branch and commit
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          TAG="${{ github.event.inputs.image_tag }}"
+        elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
+          TAG="latest"
+        else
+          TAG="${GITHUB_REF#refs/heads/}-${GITHUB_SHA::7}"
+        fi
+
+        # Full image URL
+        IMAGE_URL="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}"
+
+        echo "tag=${TAG}" >> $GITHUB_OUTPUT
+        echo "image=${IMAGE_URL}" >> $GITHUB_OUTPUT
+        echo "full_image=${IMAGE_URL}:${TAG}" >> $GITHUB_OUTPUT
+
+        # Also tag with commit SHA for traceability
+        echo "sha_tag=${IMAGE_URL}:sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
+
+        # Generate build timestamp
+        echo "timestamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
+
+    - name: Build Docker image
+      uses: docker/build-push-action@v5
+      with:
+        context: ./MuseTalk
+        file: ./MuseTalk/docker/Dockerfile
+        platforms: linux/amd64
+        push: false
+        load: true
+        tags: |
+          ${{ steps.meta.outputs.full_image }}
+          ${{ steps.meta.outputs.sha_tag }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+        build-args: |
+          BUILD_DATE=${{ steps.meta.outputs.timestamp }}
+          VCS_REF=${{ github.sha }}
+          VERSION=${{ steps.meta.outputs.tag }}
+
+    - name: Run security scan
+      uses: aquasecurity/trivy-action@master
+      with:
+        image-ref: ${{ steps.meta.outputs.full_image }}
+        format: 'sarif'
+        output: 'trivy-results.sarif'
+        severity: 'CRITICAL,HIGH'
+        exit-code: '0'  # Don't fail build on vulnerabilities, just report
+
+    - name: Upload Trivy results to GitHub Security
+      uses: github/codeql-action/upload-sarif@v3
+      if: always()
+      with:
+        sarif_file: 'trivy-results.sarif'
+
+    - name: Push to Google Artifact Registry
+      run: |
+        docker push ${{ steps.meta.outputs.full_image }}
+        docker push ${{ steps.meta.outputs.sha_tag }}
+
+        echo "✅ Successfully pushed images:"
+        echo "  - ${{ steps.meta.outputs.full_image }}"
+        echo "  - ${{ steps.meta.outputs.sha_tag }}"
+
+    - name: Generate deployment instructions
+      run: |
+        cat << EOF > deployment-info.txt
+        ========================================
+        Docker Image Build & Push Successful
+        ========================================
+
+        Image Details:
+        - Registry: ${{ env.GAR_LOCATION }}-docker.pkg.dev
+        - Project: ${{ env.PROJECT_ID }}
+        - Repository: ${{ env.GAR_REPOSITORY }}
+        - Image: ${{ env.IMAGE_NAME }}
+        - Tag: ${{ steps.meta.outputs.tag }}
+        - SHA Tag: sha-${GITHUB_SHA::7}
+
+        Full Image URLs:
+        - ${{ steps.meta.outputs.full_image }}
+        - ${{ steps.meta.outputs.sha_tag }}
+
+        To pull this image:
+        docker pull ${{ steps.meta.outputs.full_image }}
+
+        To deploy:
+        1. Use the image URL: ${{ steps.meta.outputs.full_image }}
+        2. Models are already included in the image (downloaded from GCS during build)
+        3. Optional: Mount storage volume at /workspace/ai-video-generation/MuseTalk/fastapi_server/storage for outputs
+        4. Configure GPU resources (minimum 16GB VRAM recommended)
+        5. Expose ports: 8000 (API), 8001 (Model Server)
+        
+        Note: This image contains models baked in (~10GB), making it self-contained but larger
+
+        ========================================
+        EOF
+
+        cat deployment-info.txt
+
+    - name: Upload deployment info as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: deployment-info-${{ github.sha }}
+        path: deployment-info.txt
+        retention-days: 30
+
+    - name: Create GitHub Release (on tag push)
+      if: startsWith(github.ref, 'refs/tags/')
+      uses: softprops/action-gh-release@v1
+      with:
+        body: |
+          ## Docker Image
+
+          ```
+          ${{ steps.meta.outputs.full_image }}
+          ```
+
+          ### Pull Command
+          ```bash
+          docker pull ${{ steps.meta.outputs.full_image }}
+          ```
+        files: deployment-info.txt
