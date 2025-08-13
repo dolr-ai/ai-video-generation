@@ -35,7 +35,7 @@ jobs:
     
     - name: Install dependencies
       run: |
-        pip install gdown huggingface_hub
+        pip install huggingface_hub[cli] gdown
     
     # Authenticate to Google Cloud using service account key
     - name: Authenticate to Google Cloud
@@ -59,97 +59,73 @@ jobs:
     
     - name: Download MuseTalk models
       run: |
-        mkdir -p models/musetalk
+        mkdir -p models/musetalk models/musetalkV15 models/syncnet models/dwpose models/face-parse-bisent models/sd-vae models/whisper
         
-        # MuseTalk models
-        gdown "1sJWsc0eKDGPvLX-6K37_pjdHbsMoO96h" -O models/musetalk/pytorch_model.bin
-        gdown "1wQW4_LfeVHqjCL9r_L9DXlR8qpKJdaDe" -O models/musetalk/config.json
+        # Download MuseTalk V1.0 weights
+        hf download TMElyralab/MuseTalk \
+          --local-dir models \
+          --include "musetalk/musetalk.json" "musetalk/pytorch_model.bin"
         
-        echo "✅ Downloaded MuseTalk models"
-        ls -lh models/musetalk/
+        echo "✅ Downloaded MuseTalk V1.0 models"
+        ls -lh models/musetalk/ || true
     
     - name: Download MuseTalk V1.5 models
       run: |
-        mkdir -p models/musetalkV15
-        
-        # MuseTalk V1.5 models
-        gdown "1YqJoXB2L9tPEAgR7s-lYJvVpDKfIGbgJ" -O models/musetalkV15/pytorch_model.bin
-        gdown "1lF8TB_1TKw_3mUWZA7KHhMr9PFgAkJAR" -O models/musetalkV15/config.json
+        # Download MuseTalk V1.5 weights (unet.pth)
+        hf download TMElyralab/MuseTalk \
+          --local-dir models \
+          --include "musetalkV15/musetalk.json" "musetalkV15/unet.pth"
         
         echo "✅ Downloaded MuseTalk V1.5 models"
-        ls -lh models/musetalkV15/
+        ls -lh models/musetalkV15/ || true
     
     - name: Download SyncNet model
       run: |
-        mkdir -p models/syncnet
-        
-        # SyncNet model
-        gdown "1gHlMK5lJ0m0eD5fKhbI7Fn2hFpE3mKAx" -O models/syncnet/syncnet_v2.model
+        # Download SyncNet weights
+        hf download ByteDance/LatentSync \
+          --local-dir models/syncnet \
+          --include "latentsync_syncnet.pt"
         
         echo "✅ Downloaded SyncNet model"
-        ls -lh models/syncnet/
+        ls -lh models/syncnet/ || true
     
     - name: Download DWPose models
       run: |
-        mkdir -p models/dwpose
-        
-        # DWPose models
-        gdown "1NZVY-AL3VVzZkGVQLmJmhRVvlMltovzP" -O models/dwpose/dw-ll_ucoco_384.onnx
-        gdown "1kzeenAh3iKj1GKKxPOHklWdA6ly_cJF7" -O models/dwpose/yolox_l.onnx
+        # Download DWPose weights
+        hf download yzd-v/DWPose \
+          --local-dir models/dwpose \
+          --include "dw-ll_ucoco_384.pth"
         
         echo "✅ Downloaded DWPose models"
-        ls -lh models/dwpose/
+        ls -lh models/dwpose/ || true
     
     - name: Download Face Parsing model
       run: |
         mkdir -p models/face-parse-bisent
         
-        # Face parsing model
-        gdown "1Y8BDrY0sxvHVMJiKso3rGJDDe0o-jVET" -O models/face-parse-bisent/79999_iter.pth
+        # Download Face Parse Bisent weights (using gdown as in original script)
+        gdown --id 154JgKpzCPW82qINcVieuPH3fZ2e0P812 -O models/face-parse-bisent/79999_iter.pth
+        
+        # Download resnet18 if not present
+        curl -L https://download.pytorch.org/models/resnet18-5c106cde.pth \
+          -o models/face-parse-bisent/resnet18-5c106cde.pth
         
         echo "✅ Downloaded Face Parsing model"
-        ls -lh models/face-parse-bisent/
+        ls -lh models/face-parse-bisent/ || true
     
-    - name: Download Hugging Face models
+    - name: Download SD-VAE and Whisper models
       run: |
-        mkdir -p models/sd-vae models/whisper
+        # Download SD VAE weights
+        hf download stabilityai/sd-vae-ft-mse \
+          --local-dir models/sd-vae \
+          --include "config.json" "diffusion_pytorch_model.bin"
         
-        # Download SD-VAE models
-        python << EOF
-        from huggingface_hub import hf_hub_download
-        import os
+        # Download Whisper weights
+        hf download openai/whisper-tiny \
+          --local-dir models/whisper \
+          --include "config.json" "pytorch_model.bin" "preprocessor_config.json"
         
-        # SD-VAE models
-        try:
-            hf_hub_download(
-                repo_id="stabilityai/sd-vae-ft-mse",
-                filename="diffusion_pytorch_model.bin",
-                local_dir="models/sd-vae",
-                local_dir_use_symlinks=False
-            )
-            hf_hub_download(
-                repo_id="stabilityai/sd-vae-ft-mse",
-                filename="config.json",
-                local_dir="models/sd-vae",
-                local_dir_use_symlinks=False
-            )
-            print("✅ Downloaded SD-VAE models")
-        except Exception as e:
-            print(f"⚠️ Failed to download SD-VAE models: {e}")
-        
-        # Whisper model (optional)
-        try:
-            hf_hub_download(
-                repo_id="openai/whisper-base",
-                filename="pytorch_model.bin",
-                local_dir="models/whisper",
-                local_dir_use_symlinks=False
-            )
-            print("✅ Downloaded Whisper model")
-        except Exception as e:
-            print(f"⚠️ Failed to download Whisper model: {e}")
-        EOF
-        
+        echo "✅ Downloaded SD-VAE and Whisper models"
         ls -lh models/sd-vae/ || true
         ls -lh models/whisper/ || true
     
