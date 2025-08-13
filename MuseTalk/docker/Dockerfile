@@ -47,8 +47,8 @@ RUN pip install uv==0.7.16
 # Create application directory
 WORKDIR /workspace/ai-video-generation
 
-# Copy MuseTalk source code first
-COPY . /workspace/ai-video-generation/
+# Copy MuseTalk source code first (context is ./MuseTalk so copy to MuseTalk subdirectory)
+COPY . /workspace/ai-video-generation/MuseTalk/
 
 # Create virtual environment in the exact location as docs (.venv in parent directory)
 # Following Step 2 from docs/venv_setup.md: "uv venv ../.venv --python 3.10"
