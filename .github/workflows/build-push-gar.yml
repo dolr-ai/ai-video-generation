@@ -58,32 +58,38 @@ jobs:
       with:
         credentials_json: ${{ secrets.GCP_CREDENTIALS }}
 
-    - name: Configure gcloud and Docker
+    - name: Configure Docker to use gcloud as credential helper
       run: |
-        # Activate service account explicitly
-        echo '${{ secrets.GCP_CREDENTIALS }}' > /tmp/gcp-key.json
-        gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
-        gcloud config set project ${{ secrets.GCP_PROJECT_ID }}
-        
-        # Configure Docker
         gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
-        
-        # Clean up key file
-        rm /tmp/gcp-key.json
     
     - name: Download models from GCS
       run: |
         BUCKET_NAME="${{ secrets.GCS_BUCKET || 'talking-head-models' }}"
         echo "📥 Downloading models from gs://${BUCKET_NAME}/models..."
         
+        # Debug: Check authentication
+        echo "Current auth:"
+        gcloud auth list
+        echo "Project: $(gcloud config get-value project)"
+        
         # Create models directory in MuseTalk context
         mkdir -p ./MuseTalk/models
         
-        # Download all models from GCS (remove the /* to copy the directory contents)
+        # List bucket contents first to verify access
+        echo "Listing bucket contents..."
+        gsutil ls "gs://${BUCKET_NAME}/" || echo "Failed to list bucket"
+        
+        # Download all models from GCS
+        echo "Downloading models..."
         gsutil -m cp -r "gs://${BUCKET_NAME}/models/" ./MuseTalk/ || {
           echo "❌ Failed to download models from GCS"
-          echo "Make sure the models workflow has been run first"
-          exit 1
+          echo "Debugging info:"
+          echo "GOOGLE_APPLICATION_CREDENTIALS: $GOOGLE_APPLICATION_CREDENTIALS"
+          echo "Trying with gcloud storage instead..."
+          gcloud storage cp -r "gs://${BUCKET_NAME}/models/" ./MuseTalk/ || {
+            echo "Both gsutil and gcloud storage failed"
+            exit 1
+          }
         }
         
         # Verify models were downloaded
