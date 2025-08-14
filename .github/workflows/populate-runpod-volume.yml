@@ -44,6 +44,12 @@ jobs:
     
     - name: Create temporary pod for data transfer
       id: create-pod
+      env:
+        RUNPOD_API_KEY: ${{ secrets.RUNPOD_API_KEY }}
+        GCP_CREDENTIALS: ${{ secrets.GCP_CREDENTIALS }}
+        GCS_BUCKET: ${{ env.GCS_BUCKET }}
+        VOLUME_ID: ${{ github.event.inputs.volume_id }}
+        GPU_TYPE: ${{ github.event.inputs.gpu_type }}
       run: |
         python3 << 'EOF'
         import runpod
@@ -51,21 +57,21 @@ jobs:
         import os
         
         # Configure RunPod
-        runpod.api_key = "${{ secrets.RUNPOD_API_KEY }}"
+        runpod.api_key = os.environ["RUNPOD_API_KEY"]
         
         # Create pod configuration
         pod_config = {
-            "name": "model-transfer-${{ github.run_id }}",
+            "name": f"model-transfer-{os.environ.get('GITHUB_RUN_ID', int(time.time()))}",
             "imageName": "ubuntu:22.04",
-            "gpuType": "${{ github.event.inputs.gpu_type }}",
+            "gpuType": os.environ["GPU_TYPE"],
             "containerDiskInGb": 10,
             "volumeInGb": 0,  # Using network volume
-            "networkVolumeId": "${{ github.event.inputs.volume_id }}",
+            "networkVolumeId": os.environ["VOLUME_ID"],
             "volumeMountPath": "/workspace/models",
             "ports": "22/tcp",
             "env": [
-                {"key": "GCP_CREDENTIALS", "value": "${{ secrets.GCP_CREDENTIALS }}"},
-                {"key": "GCS_BUCKET", "value": "${{ env.GCS_BUCKET }}"}
+                {"key": "GCP_CREDENTIALS", "value": os.environ["GCP_CREDENTIALS"]},
+                {"key": "GCS_BUCKET", "value": os.environ["GCS_BUCKET"]}
             ]
         }
         
