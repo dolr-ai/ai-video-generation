@@ -16,7 +16,7 @@ on:
         required: false
         default: 'latest'
         type: string
-  
+
   workflow_run:
     workflows: ["Download and Upload Models to GCS"]
     types:
@@ -27,7 +27,7 @@ env:
   GAR_LOCATION: us-central1
   GAR_REPOSITORY: talking-head-registry
   PROJECT_ID: jay-dhanwant-experiments
-  IMAGE_NAME: musetalk-api
+  IMAGE_NAME: talking-head-api
 
 jobs:
   build-and-push:
@@ -48,7 +48,7 @@ jobs:
       uses: docker/setup-buildx-action@v3
       with:
         driver-opts: network=host
-    
+
     - name: Set up Cloud SDK
       uses: google-github-actions/setup-gcloud@v2
 
@@ -61,7 +61,7 @@ jobs:
     - name: Configure Docker to use gcloud as credential helper
       run: |
         gcloud auth configure-docker ${{ env.GAR_LOCATION }}-docker.pkg.dev
-    
+
     - name: Free up disk space
       run: |
         echo "🗑️ Freeing up disk space..."
@@ -72,22 +72,22 @@ jobs:
         sudo rm -rf "$AGENT_TOOLSDIRECTORY"
         sudo rm -rf /usr/local/lib/android
         sudo rm -rf /usr/local/.ghcup
-        
+
         # Remove unused Docker images
         docker system prune -af --volumes
-        
+
         # Remove unused packages
         sudo apt-get clean
         sudo apt-get autoremove -y
         sudo rm -rf /var/lib/apt/lists/*
-        
+
         # Clear package cache
         sudo apt-get autoclean
-        
+
         # Show available space
         echo "Available disk space after cleanup:"
         df -h
-        
+
     # Models will be downloaded at runtime from GCS, not during build
     # This keeps the Docker image small and allows dynamic model updates
     - name: Skip model download during build
@@ -100,7 +100,7 @@ jobs:
       id: meta
       run: |
         # Generate tag based on branch and commit
-        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ] && [ "${{ github.event.inputs.image_tag }}" != "" ]; then
           TAG="${{ github.event.inputs.image_tag }}"
         elif [ "${{ github.ref }}" == "refs/heads/main" ]; then
           TAG="latest"
@@ -114,6 +114,7 @@ jobs:
         echo "tag=${TAG}" >> $GITHUB_OUTPUT
         echo "image=${IMAGE_URL}" >> $GITHUB_OUTPUT
         echo "full_image=${IMAGE_URL}:${TAG}" >> $GITHUB_OUTPUT
+        echo "latest_tag=${IMAGE_URL}:latest" >> $GITHUB_OUTPUT
 
         # Also tag with commit SHA for traceability
         echo "sha_tag=${IMAGE_URL}:sha-${GITHUB_SHA::7}" >> $GITHUB_OUTPUT
@@ -131,6 +132,7 @@ jobs:
         tags: |
           ${{ steps.meta.outputs.full_image }}
           ${{ steps.meta.outputs.sha_tag }}
+          ${{ steps.meta.outputs.latest_tag }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
         build-args: |
@@ -153,7 +155,7 @@ jobs:
         echo "✅ Successfully pushed images:"
         echo "  - ${{ steps.meta.outputs.full_image }}"
         echo "  - ${{ steps.meta.outputs.sha_tag }}"
-        
+
         # Verify the image exists in the registry
         gcloud container images describe ${{ steps.meta.outputs.full_image }} || true
 
@@ -190,7 +192,7 @@ jobs:
            - /workspace/ai-video-generation/MuseTalk/fastapi_server/storage for outputs
         5. Configure GPU resources (minimum 16GB VRAM recommended)
         6. Expose ports: 8000 (API), 8001 (Model Server)
-        
+
         Note: This image is lightweight (~2-3GB) as models are downloaded at runtime
 
         ========================================
