@@ -73,44 +73,13 @@ jobs:
         # Show available space
         df -h
         
-    - name: Download essential models only from GCS
+    # Models will be downloaded at runtime from GCS, not during build
+    # This keeps the Docker image small and allows dynamic model updates
+    - name: Skip model download during build
       run: |
-        BUCKET_NAME="${{ secrets.GCS_BUCKET || 'talking-head-models' }}"
-        echo "📥 Downloading essential models from gs://${BUCKET_NAME}/models..."
-        
-        # Create models directory in MuseTalk context  
-        mkdir -p ./MuseTalk/models/{musetalk,musetalkV15,syncnet,dwpose,face-parse-bisent,sd-vae,whisper}
-        
-        # Download only essential model files (not cache files)
-        echo "Downloading core models..."
-        gcloud storage cp "gs://${BUCKET_NAME}/models/musetalk/pytorch_model.bin" ./MuseTalk/models/musetalk/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/musetalk/musetalk.json" ./MuseTalk/models/musetalk/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/musetalkV15/unet.pth" ./MuseTalk/models/musetalkV15/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/musetalkV15/musetalk.json" ./MuseTalk/models/musetalkV15/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/syncnet/latentsync_syncnet.pt" ./MuseTalk/models/syncnet/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/dwpose/dw-ll_ucoco_384.pth" ./MuseTalk/models/dwpose/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/face-parse-bisent/79999_iter.pth" ./MuseTalk/models/face-parse-bisent/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/face-parse-bisent/resnet18-5c106cde.pth" ./MuseTalk/models/face-parse-bisent/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/sd-vae/diffusion_pytorch_model.bin" ./MuseTalk/models/sd-vae/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/sd-vae/config.json" ./MuseTalk/models/sd-vae/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/whisper/pytorch_model.bin" ./MuseTalk/models/whisper/ || true
-        gcloud storage cp "gs://${BUCKET_NAME}/models/whisper/config.json" ./MuseTalk/models/whisper/ || true
-        
-        # Verify essential models were downloaded
-        echo "📂 Downloaded essential models:"
-        find ./MuseTalk/models -name "*.pth" -o -name "*.bin" -o -name "*.pt" | head -10
-        
-        # Show disk usage
-        du -sh ./MuseTalk/models/
-        df -h
-        
-        # Check for critical model files
-        if [ ! -f "./MuseTalk/models/musetalk/pytorch_model.bin" ]; then
-          echo "❌ Critical model files missing"
-          exit 1
-        fi
-        
-        echo "✅ Models downloaded successfully"
+        echo "📦 Models will be downloaded at container startup from GCS"
+        echo "   This reduces Docker image size from ~10GB to ~2-3GB"
+        echo "   Set GCP_CREDENTIALS and GCS_BUCKET environment variables when running the container"
 
     - name: Generate image metadata
       id: meta
@@ -203,12 +172,17 @@ jobs:
 
         To deploy:
         1. Use the image URL: ${{ steps.meta.outputs.full_image }}
-        2. Models are already included in the image (downloaded from GCS during build)
-        3. Optional: Mount storage volume at /workspace/ai-video-generation/MuseTalk/fastapi_server/storage for outputs
-        4. Configure GPU resources (minimum 16GB VRAM recommended)
-        5. Expose ports: 8000 (API), 8001 (Model Server)
+        2. Set environment variables:
+           - GCP_CREDENTIALS: Service account JSON for GCS access
+           - GCS_BUCKET: Bucket name containing models (default: talking-head-models)
+        3. Models will be downloaded from GCS on first startup (~10GB)
+        4. Optional: Mount volumes:
+           - /workspace/ai-video-generation/MuseTalk/models for persistent model storage
+           - /workspace/ai-video-generation/MuseTalk/fastapi_server/storage for outputs
+        5. Configure GPU resources (minimum 16GB VRAM recommended)
+        6. Expose ports: 8000 (API), 8001 (Model Server)
         
-        Note: This image contains models baked in (~10GB), making it self-contained but larger
+        Note: This image is lightweight (~2-3GB) as models are downloaded at runtime
 
         ========================================
         EOF
