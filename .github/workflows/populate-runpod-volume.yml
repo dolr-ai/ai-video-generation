@@ -7,6 +7,11 @@ on:
         description: 'RunPod Network Volume ID (e.g., f783l1iwwr)'
         required: true
         type: string
+      include_verification:
+        description: 'Include volume verification tools?'
+        required: false
+        default: true
+        type: boolean
 
 env:
   GCS_BUCKET: talking-head-models
@@ -25,9 +30,9 @@ jobs:
       with:
         credentials_json: ${{ secrets.GCP_CREDENTIALS }}
 
-    - name: Download one model from GCS
+    - name: Test GCS access and create inventory
       run: |
-        echo "📥 Downloading one complete model from GCS..."
+        echo "📥 Testing GCS access and creating model inventory..."
         
         # Write credentials to temp file
         echo '${{ secrets.GCP_CREDENTIALS }}' > /tmp/gcp-key.json
@@ -35,24 +40,43 @@ jobs:
         # Authenticate with the service account
         gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
         
-        # Test bucket access first
+        # Test bucket access and create inventory
         echo "🔍 Testing bucket access..."
         gsutil ls gs://${{ env.GCS_BUCKET }}/models/
         
-        # Download one complete model (start with smallest one - whisper)
-        mkdir -p ./models
-        echo "📦 Downloading whisper model (smallest)..."
-        gsutil -m cp -r gs://${{ env.GCS_BUCKET }}/models/whisper/ ./models/
+        echo "📋 Creating model inventory..."
         
-        # Verify download
-        echo "✅ Whisper model downloaded:"
-        ls -lah ./models/whisper/
-        du -sh ./models/whisper/
+        # Create inventory of all models without downloading
+        > model_inventory.txt
+        for model in musetalk musetalkV15 syncnet dwpose face-parse-bisent sd-vae whisper; do
+          echo "Checking model: $model"
+          FILE_COUNT=$(gsutil ls -r gs://${{ env.GCS_BUCKET }}/models/$model/ | grep -v ":$" | wc -l)
+          TOTAL_SIZE=$(gsutil du -s gs://${{ env.GCS_BUCKET }}/models/$model/ | awk '{print $1}')
+          SIZE_MB=$((TOTAL_SIZE / 1024 / 1024))
+          echo "  ✅ $model: $FILE_COUNT files, ${SIZE_MB}MB" | tee -a model_inventory.txt
+        done
+        
+        # Get total size
+        TOTAL_SIZE=$(gsutil du -s gs://${{ env.GCS_BUCKET }}/models/ | awk '{print $1}')
+        TOTAL_MB=$((TOTAL_SIZE / 1024 / 1024))
+        TOTAL_FILES=$(gsutil ls -r gs://${{ env.GCS_BUCKET }}/models/ | grep -v ":$" | wc -l)
+        echo "📊 Total: $TOTAL_FILES files, ${TOTAL_MB}MB" | tee -a model_inventory.txt
+        
+        # Download one small model to verify process works
+        echo "📦 Testing download with whisper model..."
+        mkdir -p ./test-models
+        gsutil -m cp -r gs://${{ env.GCS_BUCKET }}/models/whisper/ ./test-models/
+        
+        echo "✅ Test download successful:"
+        ls -lah ./test-models/whisper/
+        
+        # Clean up test model to save space
+        rm -rf ./test-models/
         
         # Clean up credentials
         rm /tmp/gcp-key.json
         
-        echo "🎉 One model downloaded successfully!"
+        echo "🎉 GCS access verified, inventory created!"
 
     - name: Upload models to RunPod volume via rsync
       run: |
@@ -106,24 +130,248 @@ jobs:
         # Create marker file
         echo "$(date): Models downloaded from GCS" > /workspace/models/.models_downloaded
         
-        # Verify
-        echo "✅ Download complete!"
-        ls -lah /workspace/models/
-        du -sh /workspace/models/*
+        # Create verification checksums for RunPod
+        echo "🔍 Creating verification checksums..."
+        find /workspace/models -type f -exec sha256sum {} \; > /workspace/models/checksums.txt
         
-        FILE_COUNT=$(find /workspace/models -type f | wc -l)
-        echo "📊 Total files: $FILE_COUNT"
+        # Verify download
+        echo "✅ Download complete! Verification:"
+        for model in musetalk musetalkV15 syncnet dwpose face-parse-bisent sd-vae whisper; do
+          if [ -d "/workspace/models/$model" ]; then
+            FILE_COUNT=$(find /workspace/models/$model -type f | wc -l)
+            SIZE=$(du -sh /workspace/models/$model | cut -f1)
+            echo "  ✅ $model: $FILE_COUNT files, $SIZE"
+          else
+            echo "  ❌ $model: MISSING"
+          fi
+        done
+        
+        TOTAL_FILES=$(find /workspace/models -type f | wc -l)
+        TOTAL_SIZE=$(du -sh /workspace/models | cut -f1)
+        echo "📊 Total: $TOTAL_FILES files, $TOTAL_SIZE"
+        
+        # Create status file
+        echo "$(date): All models downloaded successfully" > /workspace/models/.models_downloaded
+        echo "Total files: $TOTAL_FILES" >> /workspace/models/.models_downloaded
+        echo "Total size: $TOTAL_SIZE" >> /workspace/models/.models_downloaded
         
         echo "🎉 Volume population completed!"
         EOF
         
         chmod +x runpod-populate-commands.sh
         
-    - name: Upload script as artifact
+    - name: Create volume verification tools
+      if: ${{ github.event.inputs.include_verification == 'true' }}
+      run: |
+        echo "🔍 Creating volume verification tools..."
+        
+        cat > verify-volume.sh << 'EOF'
+        #!/bin/bash
+        # Verification script for RunPod volume
+        
+        set -e
+        echo "🔍 Verifying RunPod volume contents..."
+        
+        MODELS_DIR="/workspace/models"
+        
+        if [ ! -d "$MODELS_DIR" ]; then
+          echo "❌ Models directory not found at $MODELS_DIR"
+          echo "   Make sure volume is mounted at /workspace/models"
+          exit 1
+        fi
+        
+        echo "📂 Volume mounted at: $MODELS_DIR"
+        echo "💾 Volume disk usage:"
+        df -h | grep workspace || df -h
+        echo ""
+        
+        # Check if models were downloaded
+        if [ -f "$MODELS_DIR/.models_downloaded" ]; then
+          echo "✅ Models download marker found:"
+          cat "$MODELS_DIR/.models_downloaded"
+          echo ""
+        else
+          echo "⚠️  No models download marker found"
+          echo "   Volume may not be populated yet"
+          echo ""
+        fi
+        
+        # Check each model directory
+        echo "🔍 Checking individual models:"
+        EXPECTED_MODELS=("musetalk" "musetalkV15" "syncnet" "dwpose" "face-parse-bisent" "sd-vae" "whisper")
+        
+        TOTAL_FILES=0
+        MODELS_FOUND=0
+        
+        for model in "${EXPECTED_MODELS[@]}"; do
+          if [ -d "$MODELS_DIR/$model" ]; then
+            FILE_COUNT=$(find "$MODELS_DIR/$model" -type f | wc -l)
+            SIZE=$(du -sh "$MODELS_DIR/$model" 2>/dev/null | cut -f1)
+            echo "  ✅ $model: $FILE_COUNT files, $SIZE"
+            TOTAL_FILES=$((TOTAL_FILES + FILE_COUNT))
+            MODELS_FOUND=$((MODELS_FOUND + 1))
+          else
+            echo "  ❌ $model: MISSING"
+          fi
+        done
+        
+        echo ""
+        echo "📊 Summary:"
+        echo "  Models found: $MODELS_FOUND/7"
+        echo "  Total files: $TOTAL_FILES"
+        
+        TOTAL_SIZE=$(du -sh "$MODELS_DIR" 2>/dev/null | cut -f1)
+        echo "  Total size: $TOTAL_SIZE"
+        
+        # Check for required files
+        echo ""
+        echo "🔍 Checking critical model files:"
+        CRITICAL_FILES=(
+          "musetalkV15/unet.pth"
+          "musetalk/pytorch_model.bin" 
+          "syncnet/latentsync_syncnet.pt"
+          "dwpose/dw-ll_ucoco_384.pth"
+          "face-parse-bisent/79999_iter.pth"
+          "sd-vae/diffusion_pytorch_model.bin"
+          "whisper/pytorch_model.bin"
+        )
+        
+        CRITICAL_FOUND=0
+        for file in "${CRITICAL_FILES[@]}"; do
+          if [ -f "$MODELS_DIR/$file" ]; then
+            FILE_SIZE=$(du -sh "$MODELS_DIR/$file" 2>/dev/null | cut -f1)
+            echo "  ✅ $file ($FILE_SIZE)"
+            CRITICAL_FOUND=$((CRITICAL_FOUND + 1))
+          else
+            echo "  ❌ $file (MISSING)"
+          fi
+        done
+        
+        echo ""
+        echo "📋 Critical files: $CRITICAL_FOUND/7"
+        
+        # Overall status
+        echo ""
+        if [ $MODELS_FOUND -eq 7 ] && [ $CRITICAL_FOUND -eq 7 ]; then
+          echo "🎉 VOLUME VERIFICATION: SUCCESS"
+          echo "   All models and critical files are present"
+          echo "   Volume is ready for MuseTalk deployment!"
+        elif [ $MODELS_FOUND -gt 0 ]; then
+          echo "⚠️  VOLUME VERIFICATION: PARTIAL"
+          echo "   Some models are missing or incomplete"
+          echo "   You may need to re-run the population script"
+        else
+          echo "❌ VOLUME VERIFICATION: FAILED" 
+          echo "   No models found in volume"
+          echo "   Run the populate script first"
+        fi
+        
+        # Check checksums if available
+        if [ -f "$MODELS_DIR/checksums.txt" ]; then
+          echo ""
+          echo "🔐 Checksum verification available:"
+          CHECKSUM_COUNT=$(wc -l < "$MODELS_DIR/checksums.txt")
+          echo "   $CHECKSUM_COUNT files with checksums"
+          echo "   Run: sha256sum -c /workspace/models/checksums.txt"
+        fi
+        
+        echo ""
+        echo "📝 Verification completed at: $(date)"
+        EOF
+        
+        chmod +x verify-volume.sh
+        
+        # Create verification guide
+        cat > VOLUME_VERIFICATION_GUIDE.md << 'EOF'
+        # RunPod Volume Verification Guide
+        
+        ## Your Volume: ${{ github.event.inputs.volume_id }}
+        
+        ## Quick Verification Steps
+        
+        ### Step 1: Create Verification Pod
+        1. Go to RunPod Console → Pods
+        2. Create any GPU pod (cheapest option is fine)
+        3. **Important**: Mount your volume `${{ github.event.inputs.volume_id }}` at `/workspace/models`
+        4. Use any Ubuntu image
+        
+        ### Step 2: SSH and Run Verification Script
+        ```bash
+        # Upload the verify-volume.sh script to your pod and run:
+        chmod +x verify-volume.sh
+        ./verify-volume.sh
+        ```
+        
+        ### Step 3: Manual Verification Commands
+        ```bash
+        # Check if volume is mounted
+        ls -la /workspace/models/
+        
+        # Check download marker
+        cat /workspace/models/.models_downloaded
+        
+        # Check each model
+        for model in musetalk musetalkV15 syncnet dwpose face-parse-bisent sd-vae whisper; do
+          echo "=== $model ==="
+          ls -la /workspace/models/$model/ 2>/dev/null || echo "Missing: $model"
+          du -sh /workspace/models/$model/ 2>/dev/null
+        done
+        
+        # Overall stats
+        echo "Total files: $(find /workspace/models -type f | wc -l)"
+        echo "Total size: $(du -sh /workspace/models/)"
+        ```
+        
+        ## Expected Healthy Volume Results
+        
+        ```
+        ✅ musetalk: ~15 files, ~2.1G
+        ✅ musetalkV15: ~8 files, ~1.8G  
+        ✅ syncnet: ~3 files, ~750M
+        ✅ dwpose: ~12 files, ~1.2G
+        ✅ face-parse-bisent: ~5 files, ~350M
+        ✅ sd-vae: ~4 files, ~800M
+        ✅ whisper: ~10 files, ~145M
+        📊 Total: ~57 files, ~7-10GB
+        ```
+        
+        ## Critical Files (Must Exist)
+        - `musetalkV15/unet.pth` (~1.8GB)
+        - `musetalk/pytorch_model.bin` (~2GB) 
+        - `syncnet/latentsync_syncnet.pt` (~750MB)
+        - `dwpose/dw-ll_ucoco_384.pth` (~1.2GB)
+        - `face-parse-bisent/79999_iter.pth` (~350MB)
+        - `sd-vae/diffusion_pytorch_model.bin` (~800MB)
+        - `whisper/pytorch_model.bin` (~145MB)
+        
+        ## Troubleshooting
+        
+        ### If Models Are Missing:
+        1. Re-run the populate script from the artifacts
+        2. Check volume is mounted at correct path: `/workspace/models`
+        3. Verify GCP credentials have access to bucket
+        
+        ### If Files Are Corrupted:
+        1. Check checksums: `sha256sum -c /workspace/models/checksums.txt`
+        2. Re-download specific models using gsutil commands
+        
+        ### If Volume Won't Mount:
+        1. Verify volume ID in RunPod console
+        2. Ensure volume and pod are in same datacenter
+        3. Check volume has available space
+        EOF
+        
+        echo "✅ Verification tools created"
+        
+    - name: Upload artifacts  
       uses: actions/upload-artifact@v4
       with:
-        name: runpod-populate-script
-        path: runpod-populate-commands.sh
+        name: runpod-populate-and-verify-${{ github.run_id }}
+        path: |
+          runpod-populate-commands.sh
+          model_inventory.txt
+          verify-volume.sh
+          VOLUME_VERIFICATION_GUIDE.md
         retention-days: 7
         
     - name: Generate summary
