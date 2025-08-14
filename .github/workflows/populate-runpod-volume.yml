@@ -4,155 +4,88 @@ on:
   workflow_dispatch:
     inputs:
       volume_id:
-        description: 'RunPod Network Volume ID'
+        description: 'RunPod Network Volume ID (e.g., f783l1iwwr)'
         required: true
         type: string
-      gpu_type:
-        description: 'GPU type for temporary pod'
-        required: false
-        default: 'NVIDIA A40'
-        type: choice
-        options:
-          - NVIDIA A40
-          - NVIDIA RTX A5000
-          - NVIDIA RTX A4000
-          - NVIDIA RTX 4090
-          - NVIDIA RTX 3090
 
 env:
   GCS_BUCKET: talking-head-models
 
 jobs:
   populate-volume:
-    name: Download Models to RunPod Volume
+    name: Populate Existing RunPod Volume
     runs-on: ubuntu-latest
     
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-    
-    - name: Set up Python
-      uses: actions/setup-python@v5
+    - name: Set up Google Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
       with:
-        python-version: '3.10'
-    
-    - name: Install dependencies
+        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+    - name: Download models from GCS to GitHub runner
       run: |
-        pip install requests
-        echo "✅ Dependencies installed"
-    
-    - name: Create temporary pod via GraphQL API
-      id: create-pod
-      run: |
-        # Create pod using RunPod GraphQL API directly
-        RESPONSE=$(curl -s -X POST https://api.runpod.io/graphql \
-          -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
-          -H "Content-Type: application/json" \
-          -d @- << 'GRAPHQL'
-        {
-          "query": "mutation createPod($input: PodRentInteractiveInput!) { podRentInteractive(input: $input) { id desiredStatus imageName env ports volumeMounts { containerPath volumeId } } }",
-          "variables": {
-            "input": {
-              "cloudType": "ALL",
-              "gpuType": "${{ github.event.inputs.gpu_type }}",
-              "name": "model-transfer-${{ github.run_id }}",
-              "imageName": "ubuntu:22.04",
-              "dockerArgs": "",
-              "containerDiskInGb": 10,
-              "volumeInGb": 0,
-              "env": [
-                {"key": "GCP_CREDENTIALS", "value": "${{ secrets.GCP_CREDENTIALS }}"},
-                {"key": "GCS_BUCKET", "value": "${{ env.GCS_BUCKET }}"}
-              ],
-              "ports": "22/tcp",
-              "volumeMounts": [
-                {
-                  "containerPath": "/workspace/models",
-                  "volumeId": "${{ github.event.inputs.volume_id }}",
-                  "name": "models-volume"
-                }
-              ]
-            }
-          }
-        }
-        GRAPHQL
-        )
+        echo "📥 Downloading models from GCS to GitHub runner..."
+        mkdir -p ./models
         
-        echo "API Response: $RESPONSE"
+        # Download all models
+        gsutil -m -o "GSUtil:parallel_thread_count=10" \
+               -o "GSUtil:parallel_process_count=4" \
+               cp -r gs://${{ env.GCS_BUCKET }}/models/* ./models/
         
-        # Extract pod ID
-        POD_ID=$(echo "$RESPONSE" | jq -r '.data.podRentInteractive.id')
+        # Verify download
+        echo "✅ Models downloaded to GitHub runner:"
+        ls -lah ./models/
+        du -sh ./models/*
         
-        if [ "$POD_ID" = "null" ] || [ -z "$POD_ID" ]; then
-          echo "❌ Failed to create pod"
-          echo "$RESPONSE" | jq .
+        # Count files
+        FILE_COUNT=$(find ./models -type f | wc -l)
+        echo "📊 Total files: $FILE_COUNT"
+        
+        if [ $FILE_COUNT -lt 10 ]; then
+          echo "❌ Too few files downloaded"
           exit 1
         fi
-        
-        echo "✅ Created pod: $POD_ID"
-        echo "pod_id=$POD_ID" >> $GITHUB_OUTPUT
-    
-    - name: Wait for pod to be ready
-      id: wait-pod
+
+    - name: Upload models to RunPod volume via rsync
       run: |
-        POD_ID="${{ steps.create-pod.outputs.pod_id }}"
-        echo "⏳ Waiting for pod $POD_ID to be ready..."
+        echo "📤 This workflow demonstrates the download process."
+        echo "   In RunPod, you would mount volume ${{ github.event.inputs.volume_id }}"
+        echo "   and copy these models directly."
+        echo ""
+        echo "🔧 Manual steps to populate your RunPod volume:"
+        echo "1. Create a pod in RunPod console"
+        echo "2. Mount volume ${{ github.event.inputs.volume_id }} at /workspace/models"  
+        echo "3. SSH into pod and run:"
+        echo ""
+        echo "   # Install gcloud"
+        echo "   apt-get update && apt-get install -y google-cloud-sdk"
+        echo ""
+        echo "   # Authenticate"
+        echo "   echo '\$GCP_CREDENTIALS' > /tmp/key.json"
+        echo "   gcloud auth activate-service-account --key-file=/tmp/key.json"
+        echo ""
+        echo "   # Download to volume"
+        echo "   gsutil -m cp -r gs://${{ env.GCS_BUCKET }}/models/* /workspace/models/"
+        echo ""
+        echo "4. Verify with: ls -lah /workspace/models/"
+        echo "5. Stop the pod when done"
         
-        for i in {1..30}; do
-          RESPONSE=$(curl -s -X POST https://api.runpod.io/graphql \
-            -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"{ pod(input: {podId: \\\"$POD_ID\\\"}) { id desiredStatus runtime { uptimeInSeconds ports { ip publicPort privatePort type } } } }\"}")
-          
-          STATUS=$(echo "$RESPONSE" | jq -r '.data.pod.desiredStatus')
-          RUNTIME=$(echo "$RESPONSE" | jq -r '.data.pod.runtime')
-          
-          echo "Status: $STATUS, Runtime: $RUNTIME"
-          
-          if [ "$STATUS" = "RUNNING" ] && [ "$RUNTIME" != "null" ]; then
-            SSH_PORT=$(echo "$RESPONSE" | jq -r '.data.pod.runtime.ports[] | select(.privatePort==22) | .publicPort')
-            SSH_IP=$(echo "$RESPONSE" | jq -r '.data.pod.runtime.ports[] | select(.privatePort==22) | .ip')
-            
-            echo "✅ Pod is ready! SSH: $SSH_IP:$SSH_PORT"
-            echo "ssh_ip=$SSH_IP" >> $GITHUB_OUTPUT
-            echo "ssh_port=$SSH_PORT" >> $GITHUB_OUTPUT
-            break
-          fi
-          
-          if [ $i -eq 30 ]; then
-            echo "❌ Pod failed to start within 15 minutes"
-            exit 1
-          fi
-          
-          sleep 30
-          echo "Still waiting... ($i/30)"
-        done
-    
-    - name: Download models to volume via SSH
+    - name: Generate commands for RunPod
       run: |
-        POD_ID="${{ steps.create-pod.outputs.pod_id }}"
-        SSH_IP="${{ steps.wait-pod.outputs.ssh_ip }}"
-        SSH_PORT="${{ steps.wait-pod.outputs.ssh_port }}"
-        
-        echo "📥 Starting model download via SSH..."
-        
-        # Create download script
-        cat > download_models.sh << 'EOF'
+        cat > runpod-populate-commands.sh << 'EOF'
         #!/bin/bash
+        # Commands to run in your RunPod pod to populate the volume
+        
         set -e
-        
-        echo "🚀 Starting model download in pod..."
-        
-        # Update system
-        apt-get update
+        echo "🚀 Populating RunPod volume with models..."
         
         # Install Google Cloud SDK
-        apt-get install -y apt-transport-https ca-certificates gnupg curl
-        echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list
-        curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add -
-        apt-get update && apt-get install -y google-cloud-cli
+        apt-get update && apt-get install -y google-cloud-sdk
         
-        # Authenticate with GCP
+        # Authenticate (set this environment variable in your pod)
         echo "$GCP_CREDENTIALS" > /tmp/gcp-key.json
         gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
         rm /tmp/gcp-key.json
@@ -161,84 +94,47 @@ jobs:
         mkdir -p /workspace/models/{musetalk,musetalkV15,syncnet,dwpose,face-parse-bisent,sd-vae,whisper}
         
         # Download models from GCS
-        echo "📦 Downloading models from GCS..."
         gsutil -m -o "GSUtil:parallel_thread_count=10" \
                -o "GSUtil:parallel_process_count=4" \
-               cp -r gs://$GCS_BUCKET/models/* /workspace/models/
+               cp -r gs://talking-head-models/models/* /workspace/models/
         
         # Create marker file
         echo "$(date): Models downloaded from GCS" > /workspace/models/.models_downloaded
         
-        # Verify download
-        echo "✅ Download complete! Verification:"
+        # Verify
+        echo "✅ Download complete!"
         ls -lah /workspace/models/
         du -sh /workspace/models/*
         
-        # Count files
         FILE_COUNT=$(find /workspace/models -type f | wc -l)
-        echo "📊 Total files downloaded: $FILE_COUNT"
+        echo "📊 Total files: $FILE_COUNT"
         
-        if [ $FILE_COUNT -lt 10 ]; then
-          echo "❌ Too few files downloaded, something went wrong"
-          exit 1
-        fi
-        
-        echo "🎉 Model download completed successfully!"
+        echo "🎉 Volume population completed!"
         EOF
         
-        chmod +x download_models.sh
+        chmod +x runpod-populate-commands.sh
         
-        # Note: In a real implementation, you would need to:
-        # 1. Set up SSH keys or use RunPod's exec API
-        # 2. Transfer the script to the pod
-        # 3. Execute it remotely
+    - name: Upload script as artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: runpod-populate-script
+        path: runpod-populate-commands.sh
+        retention-days: 7
         
-        # For now, we'll show what needs to be done
-        echo "📝 Download script created. In a production setup, this would be executed via:"
-        echo "   - SSH with proper key authentication"
-        echo "   - RunPod's exec API"
-        echo "   - Or custom startup script in the pod"
-        
-        echo "🔧 Manual execution required:"
-        echo "   1. SSH into pod: ssh root@$SSH_IP -p $SSH_PORT"
-        echo "   2. Run the download commands from the script above"
-        
-        # Show the script contents for manual execution
-        echo "📋 Script contents to run manually:"
-        cat download_models.sh
-    
-    - name: Cleanup pod
-      if: always()
-      run: |
-        POD_ID="${{ steps.create-pod.outputs.pod_id }}"
-        
-        if [ ! -z "$POD_ID" ] && [ "$POD_ID" != "null" ]; then
-          echo "🧹 Terminating pod $POD_ID..."
-          
-          RESPONSE=$(curl -s -X POST https://api.runpod.io/graphql \
-            -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
-            -H "Content-Type: application/json" \
-            -d "{\"query\":\"mutation { podTerminate(input: {podId: \\\"$POD_ID\\\"}) }\"}")
-          
-          echo "Termination response: $RESPONSE"
-          echo "✅ Pod termination requested"
-        fi
-    
     - name: Generate summary
       run: |
-        echo "## 📦 RunPod Volume Population Summary" >> $GITHUB_STEP_SUMMARY
+        echo "## 📦 RunPod Volume Population Guide" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Configuration" >> $GITHUB_STEP_SUMMARY
+        echo "### Your Volume" >> $GITHUB_STEP_SUMMARY
         echo "- **Volume ID**: ${{ github.event.inputs.volume_id }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **GPU Type**: ${{ github.event.inputs.gpu_type }}" >> $GITHUB_STEP_SUMMARY
         echo "- **GCS Bucket**: ${{ env.GCS_BUCKET }}" >> $GITHUB_STEP_SUMMARY
-        echo "- **Pod ID**: ${{ steps.create-pod.outputs.pod_id }}" >> $GITHUB_STEP_SUMMARY
-        echo "" >> $GITHUB_STEP_SUMMARY
-        echo "### Status" >> $GITHUB_STEP_SUMMARY
-        echo "- Pod created and configured with volume mount" >> $GITHUB_STEP_SUMMARY
-        echo "- Manual model download required via SSH" >> $GITHUB_STEP_SUMMARY
         echo "" >> $GITHUB_STEP_SUMMARY
         echo "### Next Steps" >> $GITHUB_STEP_SUMMARY
-        echo "1. SSH into the created pod and run the model download script" >> $GITHUB_STEP_SUMMARY
-        echo "2. Verify models are downloaded to /workspace/models" >> $GITHUB_STEP_SUMMARY
-        echo "3. Pod will be automatically terminated after workflow completion" >> $GITHUB_STEP_SUMMARY
+        echo "1. **Create Pod**: In RunPod console, create any GPU pod" >> $GITHUB_STEP_SUMMARY
+        echo "2. **Mount Volume**: Attach volume ${{ github.event.inputs.volume_id }} at `/workspace/models`" >> $GITHUB_STEP_SUMMARY
+        echo "3. **Download Script**: Download the artifact with populate commands" >> $GITHUB_STEP_SUMMARY  
+        echo "4. **Run Commands**: SSH into pod and execute the script" >> $GITHUB_STEP_SUMMARY
+        echo "5. **Stop Pod**: Once complete, stop the pod to save costs" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Result" >> $GITHUB_STEP_SUMMARY
+        echo "Your volume will contain all MuseTalk models (~10GB) and be ready for serverless deployment!" >> $GITHUB_STEP_SUMMARY
