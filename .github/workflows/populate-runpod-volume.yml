@@ -25,29 +25,34 @@ jobs:
       with:
         credentials_json: ${{ secrets.GCP_CREDENTIALS }}
 
-    - name: Download models from GCS to GitHub runner
+    - name: Download one model from GCS
       run: |
-        echo "📥 Downloading models from GCS to GitHub runner..."
-        mkdir -p ./models
+        echo "📥 Downloading one complete model from GCS..."
         
-        # Download all models
-        gsutil -m -o "GSUtil:parallel_thread_count=10" \
-               -o "GSUtil:parallel_process_count=4" \
-               cp -r gs://${{ env.GCS_BUCKET }}/models/* ./models/
+        # Write credentials to temp file
+        echo '${{ secrets.GCP_CREDENTIALS }}' > /tmp/gcp-key.json
+        
+        # Authenticate with the service account
+        gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+        
+        # Test bucket access first
+        echo "🔍 Testing bucket access..."
+        gsutil ls gs://${{ env.GCS_BUCKET }}/models/
+        
+        # Download one complete model (start with smallest one - whisper)
+        mkdir -p ./models
+        echo "📦 Downloading whisper model (smallest)..."
+        gsutil -m cp -r gs://${{ env.GCS_BUCKET }}/models/whisper/ ./models/
         
         # Verify download
-        echo "✅ Models downloaded to GitHub runner:"
-        ls -lah ./models/
-        du -sh ./models/*
+        echo "✅ Whisper model downloaded:"
+        ls -lah ./models/whisper/
+        du -sh ./models/whisper/
         
-        # Count files
-        FILE_COUNT=$(find ./models -type f | wc -l)
-        echo "📊 Total files: $FILE_COUNT"
+        # Clean up credentials
+        rm /tmp/gcp-key.json
         
-        if [ $FILE_COUNT -lt 10 ]; then
-          echo "❌ Too few files downloaded"
-          exit 1
-        fi
+        echo "🎉 One model downloaded successfully!"
 
     - name: Upload models to RunPod volume via rsync
       run: |
