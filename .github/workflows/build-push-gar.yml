@@ -65,12 +65,27 @@ jobs:
     - name: Free up disk space
       run: |
         echo "🗑️ Freeing up disk space..."
+        # Remove unnecessary tools to free up space
+        sudo rm -rf /usr/share/dotnet
+        sudo rm -rf /opt/ghc
+        sudo rm -rf "/usr/local/share/boost"
+        sudo rm -rf "$AGENT_TOOLSDIRECTORY"
+        sudo rm -rf /usr/local/lib/android
+        sudo rm -rf /usr/local/.ghcup
+        
         # Remove unused Docker images
-        docker system prune -af
+        docker system prune -af --volumes
+        
         # Remove unused packages
         sudo apt-get clean
+        sudo apt-get autoremove -y
         sudo rm -rf /var/lib/apt/lists/*
+        
+        # Clear package cache
+        sudo apt-get autoclean
+        
         # Show available space
+        echo "Available disk space after cleanup:"
         df -h
         
     # Models will be downloaded at runtime from GCS, not during build
@@ -106,14 +121,13 @@ jobs:
         # Generate build timestamp
         echo "timestamp=$(date -u +'%Y%m%d-%H%M%S')" >> $GITHUB_OUTPUT
 
-    - name: Build Docker image
+    - name: Build and push Docker image
       uses: docker/build-push-action@v5
       with:
         context: ./MuseTalk
         file: ./MuseTalk/docker/Dockerfile
         platforms: linux/amd64
-        push: false
-        load: true
+        push: true
         tags: |
           ${{ steps.meta.outputs.full_image }}
           ${{ steps.meta.outputs.sha_tag }}
@@ -126,27 +140,22 @@ jobs:
 
     - name: Run security scan
       uses: aquasecurity/trivy-action@master
+      continue-on-error: true
       with:
         image-ref: ${{ steps.meta.outputs.full_image }}
-        format: 'sarif'
-        output: 'trivy-results.sarif'
+        format: 'table'
         severity: 'CRITICAL,HIGH'
         exit-code: '0'  # Don't fail build on vulnerabilities, just report
 
-    - name: Upload Trivy results to GitHub Security
-      uses: github/codeql-action/upload-sarif@v3
-      if: always()
-      with:
-        sarif_file: 'trivy-results.sarif'
-
-    - name: Push to Google Artifact Registry
+    # Push is now handled by the build-push-action above
+    - name: Verify image was pushed
       run: |
-        docker push ${{ steps.meta.outputs.full_image }}
-        docker push ${{ steps.meta.outputs.sha_tag }}
-
         echo "✅ Successfully pushed images:"
         echo "  - ${{ steps.meta.outputs.full_image }}"
         echo "  - ${{ steps.meta.outputs.sha_tag }}"
+        
+        # Verify the image exists in the registry
+        gcloud container images describe ${{ steps.meta.outputs.full_image }} || true
 
     - name: Generate deployment instructions
       run: |

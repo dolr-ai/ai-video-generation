@@ -9,7 +9,7 @@
 #
 # Models should be pre-downloaded and placed in the volume before running
 
-FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
 # Set environment variables early
 ENV DEBIAN_FRONTEND=noninteractive
@@ -74,7 +74,7 @@ RUN uv pip install --no-cache-dir openmim
 # Install MMLab components using mim (exact versions from docs)
 RUN mim install mmengine
 RUN mim install "mmcv==2.0.1"
-RUN mim install "mmdet==3.1.0"  
+RUN mim install "mmdet==3.1.0"
 RUN mim install "mmpose==1.1.0"
 
 # Step 8: Fix NumPy Version Compatibility (CRITICAL FIX from docs)
@@ -90,7 +90,7 @@ RUN python -c "import torch; import torchvision; import mmcv; import mmdet; impo
 
 # Create necessary directories for FastAPI server
 RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/temp
-RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/videos  
+RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/videos
 RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/uploads
 
 # Create models directory structure
