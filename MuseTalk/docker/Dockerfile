@@ -97,9 +97,9 @@ RUN mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/uplo
 WORKDIR /workspace/ai-video-generation/MuseTalk
 RUN mkdir -p models/musetalk models/musetalkV15 models/syncnet models/dwpose models/face-parse-bisent models/sd-vae models/whisper
 
-# Copy models if they exist (they should be downloaded from GCS before build)
-# This makes the image self-contained with models
-COPY models* /workspace/ai-video-generation/MuseTalk/models/
+# Models will be downloaded from GCS at runtime, not during build
+# This reduces image size and allows dynamic model updates
+# COPY models* /workspace/ai-video-generation/MuseTalk/models/
 
 # Make startup scripts executable (from docs/fastapi_setup.md Step 10)
 WORKDIR /workspace/ai-video-generation/MuseTalk/fastapi_server
@@ -107,6 +107,16 @@ RUN chmod +x start_model_server.sh start_handler_server.sh
 
 # Install additional tools for model weight downloading (Step 10 preparation)
 RUN uv pip install huggingface_hub gdown
+
+# Install Google Cloud SDK for GCS model downloading
+RUN apt-get update && apt-get install -y \
+    apt-transport-https \
+    ca-certificates \
+    gnupg \
+    && echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt cloud-sdk main" | tee -a /etc/apt/sources.list.d/google-cloud-sdk.list \
+    && curl https://packages.cloud.google.com/apt/doc/apt-key.gpg | apt-key --keyring /usr/share/keyrings/cloud.google.gpg add - \
+    && apt-get update && apt-get install -y google-cloud-cli \
+    && rm -rf /var/lib/apt/lists/*
 
 # Declare volumes for models and storage
 # Models volume: Mount your pre-downloaded models here

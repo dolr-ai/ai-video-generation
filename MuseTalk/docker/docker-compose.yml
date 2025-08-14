@@ -16,6 +16,9 @@ services:
       - CUDA_VISIBLE_DEVICES=0
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
+      # GCS configuration for model downloading
+      - GCS_BUCKET=${GCS_BUCKET:-talking-head-models}
+      - GCP_CREDENTIALS=${GCP_CREDENTIALS}
     
     # Port mapping (Handler: 8000, Model: 8001)
     ports:
@@ -24,8 +27,9 @@ services:
     
     # Volume mounts
     volumes:
-      # Mount model weights directory (REQUIRED - download models first)
-      - ./models:/workspace/ai-video-generation/MuseTalk/models:ro
+      # Models will be downloaded from GCS at startup if not present
+      # Remove :ro flag to allow writing during download
+      - ./models:/workspace/ai-video-generation/MuseTalk/models
       
       # Mount storage for generated videos and uploads
       - ./storage:/workspace/ai-video-generation/MuseTalk/fastapi_server/storage
@@ -72,6 +76,9 @@ services:
       - PYTHONUNBUFFERED=1
       - PYTHONDONTWRITEBYTECODE=1
       - MUSETALK_DEBUG=1
+      # GCS configuration for model downloading
+      - GCS_BUCKET=${GCS_BUCKET:-talking-head-models}
+      - GCP_CREDENTIALS=${GCP_CREDENTIALS}
     volumes:
       # Development: mount source code for live editing
       - ../:/workspace/ai-video-generation:rw

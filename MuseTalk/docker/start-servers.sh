@@ -25,49 +25,91 @@ if [ ! -d "$MODELS_DIR" ]; then
     mkdir -p "$MODELS_DIR"/{musetalk,musetalkV15,syncnet,dwpose,face-parse-bisent,sd-vae,whisper}
 fi
 
-# Check if models are mounted or need to be downloaded
-if [ ! -f "$MODELS_DIR/musetalkV15/unet.pth" ]; then
-    echo "⚠️  WARNING: Model weights not found in $MODELS_DIR"
-    echo "   Models can be:"
-    echo "   1. Mounted as a volume: -v /path/to/models:$MODELS_DIR"
-    echo "   2. Downloaded from GCS if GCS_BUCKET is set"
-    echo "   3. Downloaded manually inside the container"
+# Function to download models from GCS
+download_models_from_gcs() {
+    local bucket_name="${GCS_BUCKET:-talking-head-models}"
     
-    # Try to download from GCS if bucket is configured
-    if [ ! -z "$GCS_BUCKET" ]; then
-        echo "📥 Attempting to download models from GCS bucket: $GCS_BUCKET"
-        if command -v gsutil &> /dev/null; then
-            gsutil -m cp -r "gs://$GCS_BUCKET/models/*" "$MODELS_DIR/" || {
-                echo "⚠️  Failed to download from GCS"
-            }
-        else
-            echo "⚠️  gsutil not available for GCS download"
-        fi
+    echo "📥 Downloading models from GCS bucket: gs://$bucket_name/models/"
+    
+    # Authenticate with GCS using service account
+    if [ ! -z "$GCP_CREDENTIALS" ]; then
+        echo "🔐 Authenticating with GCP using service account..."
+        echo "$GCP_CREDENTIALS" > /tmp/gcp-key.json
+        gcloud auth activate-service-account --key-file=/tmp/gcp-key.json
+        rm /tmp/gcp-key.json
+    else
+        echo "⚠️  GCP_CREDENTIALS not set, assuming workload identity or default credentials"
     fi
     
-    # Continue anyway - models might be downloaded through API later
-    echo "⚠️  Continuing without models - they may be downloaded on first use"
+    # Download all models with parallel transfers for speed
+    echo "📦 Downloading model files..."
+    gsutil -m -o "GSUtil:parallel_thread_count=10" \
+           -o "GSUtil:parallel_process_count=4" \
+           cp -r "gs://$bucket_name/models/*" "$MODELS_DIR/" || {
+        echo "❌ Failed to download models from GCS"
+        return 1
+    }
+    
+    echo "✅ Models downloaded successfully from GCS"
+    return 0
+}
+
+# Check if models are mounted or need to be downloaded
+if [ ! -f "$MODELS_DIR/musetalkV15/unet.pth" ]; then
+    echo "⚠️  Model weights not found in $MODELS_DIR"
+    
+    # Try to download from GCS
+    if command -v gsutil &> /dev/null; then
+        download_models_from_gcs || {
+            echo "❌ Failed to download models from GCS"
+            echo "   Please ensure:"
+            echo "   1. GCP_CREDENTIALS environment variable is set with service account JSON"
+            echo "   2. GCS_BUCKET is set (default: talking-head-models)"
+            echo "   3. Service account has access to the bucket"
+            exit 1
+        }
+    else
+        echo "❌ gsutil not available for GCS download"
+        exit 1
+    fi
 else
     echo "✅ Models found in $MODELS_DIR"
 fi
 
 # Verify required model files exist
 REQUIRED_FILES=(
-    "models/musetalkV15/unet.pth"
-    "models/musetalkV15/musetalk.json"
-    "models/sd-vae/diffusion_pytorch_model.bin"
-    "models/whisper/pytorch_model.bin"
-    "models/dwpose/dw-ll_ucoco_384.pth"
+    "musetalk/musetalk.json"
+    "musetalk/pytorch_model.bin"
+    "musetalkV15/musetalk.json"
+    "musetalkV15/unet.pth"
+    "syncnet/latentsync_syncnet.pt"
+    "dwpose/dw-ll_ucoco_384.pth"
+    "face-parse-bisent/79999_iter.pth"
+    "face-parse-bisent/resnet18-5c106cde.pth"
+    "sd-vae/config.json"
+    "sd-vae/diffusion_pytorch_model.bin"
+    "whisper/config.json"
+    "whisper/pytorch_model.bin"
+    "whisper/preprocessor_config.json"
 )
 
+MISSING_FILES=()
 for file in "${REQUIRED_FILES[@]}"; do
-    if [ ! -f "/workspace/ai-video-generation/MuseTalk/$file" ]; then
-        echo "❌ ERROR: Required model file missing: $file"
-        exit 1
+    if [ ! -f "$MODELS_DIR/$file" ]; then
+        MISSING_FILES+=("$file")
     fi
 done
 
+if [ ${#MISSING_FILES[@]} -gt 0 ]; then
+    echo "❌ ERROR: Required model files missing:"
+    for file in "${MISSING_FILES[@]}"; do
+        echo "   - $file"
+    done
+    exit 1
+fi
+
 echo "✅ All required model files found"
+ls -lh "$MODELS_DIR/" | head -20
 
 # Create log directory
 mkdir -p /workspace/ai-video-generation/MuseTalk/fastapi_server/logs
