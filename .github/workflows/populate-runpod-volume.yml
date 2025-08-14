@@ -96,7 +96,7 @@ jobs:
         rm /tmp/gcp-key.json
         
         # Create directory structure
-        mkdir -p /workspace/models/{musetalk,musetalkV15,syncnet,dwpose,face-parse-bisent,sd-vae,whisper}
+        mkdir -p /workspace/models/musetalk /workspace/models/musetalkV15 /workspace/models/syncnet /workspace/models/dwpose /workspace/models/face-parse-bisent /workspace/models/sd-vae /workspace/models/whisper
         
         # Download models from GCS
         gsutil -m -o "GSUtil:parallel_thread_count=10" \
