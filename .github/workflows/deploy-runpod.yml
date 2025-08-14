@@ -1,0 +1,354 @@
+name: Deploy to RunPod Serverless
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Deployment environment'
+        required: true
+        default: 'production'
+        type: choice
+        options:
+          - production
+          - staging
+          - development
+      volume_id:
+        description: 'RunPod Network Volume ID (optional - for faster startups)'
+        required: false
+        type: string
+      gpu_type:
+        description: 'GPU type for serverless workers'
+        required: false
+        default: 'NVIDIA A40'
+        type: choice
+        options:
+          - NVIDIA A40
+          - NVIDIA RTX A5000
+          - NVIDIA RTX A4000
+          - NVIDIA RTX 4090
+          - NVIDIA RTX 3090
+      
+  workflow_run:
+    workflows: ["Build and Push to Google Artifact Registry"]
+    types:
+      - completed
+    branches: [main]
+
+env:
+  GAR_LOCATION: us-central1
+  GAR_REPOSITORY: talking-head-registry
+  PROJECT_ID: jay-dhanwant-experiments
+  IMAGE_NAME: talking-head-api
+
+jobs:
+  deploy-to-runpod:
+    name: Deploy to RunPod Serverless
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+    
+    - name: Install RunPod CLI
+      run: |
+        pip install runpodctl
+        echo "✅ RunPod CLI installed"
+    
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+    
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+    
+    - name: Get latest image tag
+      id: get-image
+      run: |
+        # Get the latest image from GAR
+        IMAGE_URL="${{ env.GAR_LOCATION }}-docker.pkg.dev/${{ env.PROJECT_ID }}/${{ env.GAR_REPOSITORY }}/${{ env.IMAGE_NAME }}"
+        
+        # For workflow_dispatch, use specified environment
+        if [ "${{ github.event_name }}" == "workflow_dispatch" ]; then
+          ENV_TAG="${{ github.event.inputs.environment }}"
+        else
+          ENV_TAG="latest"
+        fi
+        
+        FULL_IMAGE="${IMAGE_URL}:${ENV_TAG}"
+        echo "image=${FULL_IMAGE}" >> $GITHUB_OUTPUT
+        echo "🐳 Using image: ${FULL_IMAGE}"
+    
+    - name: Configure RunPod API
+      run: |
+        # Set RunPod API key
+        echo "🔑 Configuring RunPod API access..."
+        export RUNPOD_API_KEY="${{ secrets.RUNPOD_API_KEY }}"
+        
+        # Verify API access
+        curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
+          https://api.runpod.io/graphql \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -d '{"query":"{ myself { id email } }"}' | jq .
+    
+    - name: Create/Update RunPod Serverless Endpoint
+      id: deploy
+      run: |
+        ENDPOINT_NAME="musetalk-api-${{ github.event.inputs.environment || 'production' }}"
+        IMAGE_URL="${{ steps.get-image.outputs.image }}"
+        
+        echo "📦 Deploying to RunPod Serverless..."
+        echo "   Endpoint: ${ENDPOINT_NAME}"
+        echo "   Image: ${IMAGE_URL}"
+        
+        # Create the endpoint configuration
+        cat > runpod-config.json << EOF
+        {
+          "name": "${ENDPOINT_NAME}",
+          "dockerImage": "${IMAGE_URL}",
+          "gpuType": "NVIDIA RTX A4000",
+          "minWorkers": 0,
+          "maxWorkers": 3,
+          "defaultWorkers": 0,
+          "scalerType": "QUEUE_DELAY",
+          "scalerValue": 30,
+          "workerTimeout": 300,
+          "containerDiskSize": 20,
+          "volumeSize": 0,
+          "ports": "8000/http,8001/http",
+          "env": [
+            {
+              "key": "GCP_CREDENTIALS",
+              "value": "${{ secrets.GCP_CREDENTIALS }}"
+            },
+            {
+              "key": "GCS_BUCKET",
+              "value": "${{ secrets.GCS_BUCKET || 'talking-head-models' }}"
+            },
+            {
+              "key": "CUDA_VISIBLE_DEVICES",
+              "value": "0"
+            },
+            {
+              "key": "PYTHONUNBUFFERED",
+              "value": "1"
+            }
+          ],
+          "handlerPath": "/workspace/ai-video-generation/MuseTalk/runpod_handler.py",
+          "maxConcurrency": 1
+        }
+        EOF
+        
+        # Check if endpoint exists
+        ENDPOINT_ID=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
+          https://api.runpod.io/graphql \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"query\":\"{ serverlessEndpoints { id name } }\"}" | \
+          jq -r ".data.serverlessEndpoints[] | select(.name==\"${ENDPOINT_NAME}\") | .id")
+        
+        if [ -z "$ENDPOINT_ID" ]; then
+          echo "Creating new endpoint..."
+          
+          # Create new endpoint using GraphQL API
+          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
+            https://api.runpod.io/graphql \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d @- << GRAPHQL
+          {
+            "query": "mutation CreateServerlessEndpoint(\$input: ServerlessEndpointInput!) { createServerlessEndpoint(input: \$input) { id name apiKey } }",
+            "variables": {
+              "input": {
+                "name": "${ENDPOINT_NAME}",
+                "dockerImage": "${IMAGE_URL}",
+                "gpuType": "${{ github.event.inputs.gpu_type || 'NVIDIA A40' }}",
+                "minWorkers": 0,
+                "maxWorkers": 3,
+                "defaultWorkers": 0,
+                "scalerType": "QUEUE_DELAY",
+                "scalerValue": 30,
+                "workerTimeout": 300,
+                "containerDiskSize": 20,
+                "env": {
+                  "GCP_CREDENTIALS": "${{ secrets.GCP_CREDENTIALS }}",
+                  "GCS_BUCKET": "${{ secrets.GCS_BUCKET || 'talking-head-models' }}",
+                  "CUDA_VISIBLE_DEVICES": "0",
+                  "PYTHONUNBUFFERED": "1"
+                }
+              }
+            }
+          }
+        GRAPHQL
+          )
+          
+          ENDPOINT_ID=$(echo "$RESPONSE" | jq -r '.data.createServerlessEndpoint.id')
+          API_KEY=$(echo "$RESPONSE" | jq -r '.data.createServerlessEndpoint.apiKey')
+          
+          echo "✅ Created new endpoint with ID: ${ENDPOINT_ID}"
+          echo "endpoint_id=${ENDPOINT_ID}" >> $GITHUB_OUTPUT
+          echo "api_key=${API_KEY}" >> $GITHUB_OUTPUT
+          
+        else
+          echo "Updating existing endpoint: ${ENDPOINT_ID}"
+          
+          # Update existing endpoint
+          RESPONSE=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
+            https://api.runpod.io/graphql \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d @- << GRAPHQL
+          {
+            "query": "mutation UpdateServerlessEndpoint(\$id: String!, \$input: ServerlessEndpointUpdateInput!) { updateServerlessEndpoint(id: \$id, input: \$input) { id name } }",
+            "variables": {
+              "id": "${ENDPOINT_ID}",
+              "input": {
+                "dockerImage": "${IMAGE_URL}",
+                "minWorkers": 0,
+                "maxWorkers": 3,
+                "env": {
+                  "GCP_CREDENTIALS": "${{ secrets.GCP_CREDENTIALS }}",
+                  "GCS_BUCKET": "${{ secrets.GCS_BUCKET || 'talking-head-models' }}",
+                  "CUDA_VISIBLE_DEVICES": "0",
+                  "PYTHONUNBUFFERED": "1"
+                }
+              }
+            }
+          }
+        GRAPHQL
+          )
+          
+          echo "✅ Updated endpoint: ${ENDPOINT_ID}"
+          echo "endpoint_id=${ENDPOINT_ID}" >> $GITHUB_OUTPUT
+        fi
+        
+        echo "endpoint_name=${ENDPOINT_NAME}" >> $GITHUB_OUTPUT
+    
+    - name: Wait for deployment to be ready
+      run: |
+        ENDPOINT_ID="${{ steps.deploy.outputs.endpoint_id }}"
+        echo "⏳ Waiting for endpoint to be ready..."
+        
+        for i in {1..30}; do
+          STATUS=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
+            https://api.runpod.io/graphql \
+            -X POST \
+            -H "Content-Type: application/json" \
+            -d "{\"query\":\"{ serverlessEndpoint(id: \\\"${ENDPOINT_ID}\\\") { status workers { ready running } } }\"}" | \
+            jq -r '.data.serverlessEndpoint.status')
+          
+          if [ "$STATUS" == "READY" ]; then
+            echo "✅ Endpoint is ready!"
+            break
+          fi
+          
+          echo "Status: $STATUS - waiting..."
+          sleep 10
+        done
+    
+    - name: Test endpoint health
+      continue-on-error: true
+      run: |
+        ENDPOINT_ID="${{ steps.deploy.outputs.endpoint_id }}"
+        
+        echo "🧪 Testing endpoint health..."
+        
+        # Get endpoint URL
+        ENDPOINT_URL=$(curl -s -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
+          https://api.runpod.io/graphql \
+          -X POST \
+          -H "Content-Type: application/json" \
+          -d "{\"query\":\"{ serverlessEndpoint(id: \\\"${ENDPOINT_ID}\\\") { url } }\"}" | \
+          jq -r '.data.serverlessEndpoint.url')
+        
+        echo "Endpoint URL: ${ENDPOINT_URL}"
+        
+        # Test with a simple health check
+        curl -X POST "${ENDPOINT_URL}/run" \
+          -H "Authorization: Bearer ${{ secrets.RUNPOD_API_KEY }}" \
+          -H "Content-Type: application/json" \
+          -d '{"input": {"test": true}}' || true
+    
+    - name: Generate deployment summary
+      run: |
+        ENDPOINT_NAME="${{ steps.deploy.outputs.endpoint_name }}"
+        ENDPOINT_ID="${{ steps.deploy.outputs.endpoint_id }}"
+        
+        cat << EOF > runpod-deployment.md
+        # RunPod Serverless Deployment Summary
+        
+        ## Deployment Details
+        - **Endpoint Name**: ${ENDPOINT_NAME}
+        - **Endpoint ID**: ${ENDPOINT_ID}
+        - **Docker Image**: ${{ steps.get-image.outputs.image }}
+        - **Environment**: ${{ github.event.inputs.environment || 'production' }}
+        - **Timestamp**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')
+        - **Deployed By**: ${{ github.actor }}
+        - **Commit**: ${{ github.sha }}
+        
+        ## Configuration
+        - **GPU Type**: ${{ github.event.inputs.gpu_type || 'NVIDIA A40' }}
+        - **Min Workers**: 0
+        - **Max Workers**: 3
+        - **Container Disk**: 20GB
+        - **Worker Timeout**: 300s
+        
+        ## API Usage
+        
+        \`\`\`bash
+        # Submit a job
+        curl -X POST "https://api.runpod.ai/v2/${ENDPOINT_ID}/run" \\
+          -H "Authorization: Bearer YOUR_RUNPOD_API_KEY" \\
+          -H "Content-Type: application/json" \\
+          -d '{
+            "input": {
+              "image": "base64_or_url",
+              "audio": "base64_or_url",
+              "bbox_shift": 5
+            }
+          }'
+        \`\`\`
+        
+        ## Monitoring
+        - RunPod Dashboard: https://www.runpod.io/console/serverless
+        - Endpoint Metrics: https://www.runpod.io/console/serverless/${ENDPOINT_ID}/metrics
+        
+        ## Notes
+        - Models are downloaded from GCS on cold start
+        - First request after idle will have longer latency (~2-3 minutes)
+        - Subsequent requests will be faster
+        EOF
+        
+        cat runpod-deployment.md
+    
+    - name: Upload deployment artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: runpod-deployment-${{ github.sha }}
+        path: |
+          runpod-config.json
+          runpod-deployment.md
+        retention-days: 30
+    
+    - name: Update deployment status
+      if: always()
+      run: |
+        if [ "${{ job.status }}" == "success" ]; then
+          echo "## ✅ RunPod Deployment Successful!" >> $GITHUB_STEP_SUMMARY
+        else
+          echo "## ❌ RunPod Deployment Failed!" >> $GITHUB_STEP_SUMMARY
+        fi
+        
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### Deployment Information" >> $GITHUB_STEP_SUMMARY
+        echo "- **Endpoint**: ${{ steps.deploy.outputs.endpoint_name }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Image**: ${{ steps.get-image.outputs.image }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Environment**: ${{ github.event.inputs.environment || 'production' }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Timestamp**: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> $GITHUB_STEP_SUMMARY
