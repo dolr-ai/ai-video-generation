@@ -79,7 +79,7 @@ jobs:
         
         # Ensure volume exists  
         flyctl volumes list --app talking-head-api | grep -q "musetalk_models" || \
-          flyctl volumes create musetalk_models --size 100 --region ord --vm-gpu-kind l40s --app talking-head-api
+          flyctl volumes create musetalk_models --size 100 --region ord --vm-gpu-kind l40s --app talking-head-api --yes
         
         # Deploy
         flyctl deploy --config fly/fly.toml --dockerfile fly/Dockerfile --app talking-head-api --ha=false --wait-timeout 1800
