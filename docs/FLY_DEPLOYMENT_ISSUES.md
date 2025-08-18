@@ -160,6 +160,37 @@ flyctl deploy --config fly/fly.toml --dockerfile fly/Dockerfile --app talking-he
 
 ---
 
+### 9. SSH Command Execution Failure
+**Error:**
+```
+exec: "cd": executable file not found in $PATH
+Error: ssh shell: ssh: command cd /workspace/ai-video-generation/MuseTalk && tar -xzf - && touch models/.models_downloaded failed
+tar: -: Wrote only 4096 of 10240 bytes
+tar: Child returned status 141
+```
+
+**Cause:**
+- The SSH command syntax is incorrect for Fly.io's SSH console
+- `cd` is a shell builtin, not an executable, and the command needs to be wrapped properly
+
+**Solution:**
+- Use proper shell invocation for compound commands:
+```bash
+# Wrong:
+tar -czf - models | flyctl ssh console --app talking-head-api -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf -"
+
+# Correct:
+tar -czf - models | flyctl ssh console --app talking-head-api -C "sh -c 'cd /workspace/ai-video-generation/MuseTalk && tar -xzf -'"
+```
+
+**Alternative Solution:**
+- Use absolute paths instead of cd:
+```bash
+tar -czf - models | flyctl ssh console --app talking-head-api -C "tar -xzf - -C /workspace/ai-video-generation/MuseTalk"
+```
+
+---
+
 ## Current Working Workflow
 
 ### Configuration Structure

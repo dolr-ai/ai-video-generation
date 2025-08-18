@@ -106,7 +106,8 @@ jobs:
         # Upload models if not already in volume
         if ! flyctl ssh console --app $APP_NAME -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded" 2>/dev/null; then
           echo "Uploading models to volume..."
-          tar -czf - models | flyctl ssh console --app $APP_NAME -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - && touch models/.models_downloaded"
+          tar -czf - models | flyctl ssh console --app $APP_NAME -C "tar -xzf - -C /workspace/ai-video-generation/MuseTalk"
+          flyctl ssh console --app $APP_NAME -C "touch /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"
         fi
         
         # Cleanup
