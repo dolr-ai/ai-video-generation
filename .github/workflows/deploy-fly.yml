@@ -93,7 +93,7 @@ jobs:
           flyctl volumes create $VOLUME_NAME --size $VOLUME_SIZE --region $REGION --vm-gpu-kind $GPU_TYPE --app $APP_NAME --yes
         
         # Deploy
-        flyctl deploy --config $FLY_TOML_PATH --dockerfile $DOCKERFILE_PATH --app $APP_NAME --region $REGION --ha=false --wait-timeout 1800
+        flyctl deploy --config $FLY_TOML_PATH --dockerfile $DOCKERFILE_PATH --app $APP_NAME --primary-region $REGION --ha=false --wait-timeout 1800
 
     - name: Upload models to volume
       run: |
