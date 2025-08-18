@@ -17,11 +17,22 @@ env:
 jobs:
   deploy:
     name: Deploy MuseTalk API
-    # Using larger GitHub-hosted runner with more resources
-    # Options: ubuntu-latest-4-cores (16GB RAM), ubuntu-latest-8-cores (32GB RAM), ubuntu-latest-16-cores (64GB RAM)
-    runs-on: ubuntu-latest-8-cores  # 8 vCPUs, 32GB RAM, 300GB SSD storage
+    runs-on: ubuntu-latest
 
     steps:
+    - name: Debug Start
+      run: |
+        echo "=========================================="
+        echo "🚀 WORKFLOW STARTED SUCCESSFULLY!"
+        echo "Runner: ${{ runner.os }} ${{ runner.arch }}"
+        echo "Branch: ${{ github.ref }}"
+        echo "Commit: ${{ github.sha }}"
+        echo "=========================================="
+        date
+        whoami
+        pwd
+        df -h
+
     - name: Checkout code
       uses: actions/checkout@v4
       with:
