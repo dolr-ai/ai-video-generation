@@ -23,7 +23,7 @@ jobs:
     - name: Debug Start
       run: |
         echo "=========================================="
-        echo "🚀 WORKFLOW STARTED SUCCESSFULLY!"
+        echo "WORKFLOW STARTED SUCCESSFULLY!"
         echo "Runner: ${{ runner.os }} ${{ runner.arch }}"
         echo "Branch: ${{ github.ref }}"
         echo "Commit: ${{ github.sha }}"
@@ -58,7 +58,7 @@ jobs:
       run: |
         cd MuseTalk
         echo "=========================================="
-        echo "📥 Downloading models from GCS..."
+        echo "Downloading models from GCS..."
         echo "=========================================="
 
         # Download models from GCS bucket
@@ -70,74 +70,37 @@ jobs:
         find models -type f -name "*.pth" -o -name "*.bin" -o -name "*.pt" | head -10
         du -sh models/*
 
-    - name: Create persistent volume with GPU constraint
-      run: |
-        cd MuseTalk
-        echo "Creating GPU-enabled volume if it doesn't exist..."
-
-        # Check and create models volume with GPU constraint (only 1 volume supported per machine)
-        if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_models"; then
-          echo "Creating models volume (100GB) with L40S GPU constraint..."
-          flyctl volumes create musetalk_models \
-            --size 100 \
-            --region ord \
-            --vm-gpu-kind l40s \
-            --app talking-head-api || echo "Volume creation failed, may already exist"
-        else
-          echo "Models volume already exists"
-        fi
-
-
     - name: Deploy to Fly.io
       run: |
         cd MuseTalk
-        echo "Deploying MuseTalk to Fly.io..."
-        # Increased timeout to 30 minutes for model downloads and startup
-        flyctl deploy --config fly/fly.toml --app talking-head-api --ha=false --wait-timeout 1800
+        
+        # Ensure app exists
+        flyctl apps list | grep -q "talking-head-api" || flyctl apps create talking-head-api --org yral-ds
+        
+        # Ensure volume exists  
+        flyctl volumes list --app talking-head-api | grep -q "musetalk_models" || \
+          flyctl volumes create musetalk_models --size 100 --region ord --vm-gpu-kind l40s --app talking-head-api
+        
+        # Deploy
+        flyctl deploy --config fly/fly.toml --dockerfile fly/Dockerfile --app talking-head-api --ha=false --wait-timeout 1800
 
-    - name: Upload models to Fly.io volume
+    - name: Upload models to volume
       run: |
         cd MuseTalk
-        echo "=========================================="
-        echo "📤 Uploading models to Fly.io volume..."
-        echo "=========================================="
-
-        # Check if models already exist in volume
-        echo "Checking if models already exist..."
-        MODELS_EXIST=$(flyctl ssh console --app talking-head-api -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded && echo 'exists' || echo 'missing'" 2>/dev/null || echo 'missing')
-
-        if [ "$MODELS_EXIST" = "exists" ]; then
-          echo "✅ Models already exist in volume, skipping upload"
-        else
-          echo "📦 Uploading models directly to persistent volume..."
-
-          # Upload entire models directory using sftp
+        
+        # Check and upload models if needed
+        if ! flyctl ssh console --app talking-head-api -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded" 2>/dev/null; then
           flyctl ssh sftp shell --app talking-head-api << 'EOF'
           lcd models
           cd /workspace/ai-video-generation/MuseTalk
           put -r . models
           quit
         EOF
-
-          # Create marker file
           flyctl ssh console --app talking-head-api -C "touch /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"
-
-          # Verify upload
-          echo "Verifying models in volume:"
-          flyctl ssh console --app talking-head-api -C "find /workspace/ai-video-generation/MuseTalk/models -type f -name '*.pth' -o -name '*.bin' -o -name '*.pt' | head -10"
-
-          echo "✅ Models uploaded successfully to persistent volume!"
         fi
-
-        # Show final volume usage
-        echo "Final volume disk usage:"
-        flyctl ssh console --app talking-head-api -C "df -h /workspace/ai-video-generation/MuseTalk/models/ 2>/dev/null || df -h /"
         
-        # Clean up models from runner to free space
-        echo "Cleaning up models from GitHub runner..."
+        # Cleanup
         rm -rf models/
-        echo "Runner disk space after cleanup:"
-        df -h
 
     - name: Health check
       run: |
@@ -153,7 +116,7 @@ jobs:
           # Check health endpoint (retry up to 5 times)
           for i in {1..5}; do
             if curl -f -s "https://$APP_URL/api/v1/health"; then
-              echo "✅ Health check passed!"
+              echo "Health check passed!"
               break
             else
               echo "Health check attempt $i failed, retrying in 30s..."
@@ -161,7 +124,7 @@ jobs:
             fi
 
             if [ $i -eq 5 ]; then
-              echo "❌ Health check failed after 5 attempts"
+              echo "Health check failed after 5 attempts"
               exit 1
             fi
           done
@@ -177,7 +140,7 @@ jobs:
         APP_URL=$(flyctl info --app talking-head-api --json | jq -r '.Hostname')
 
         echo "=========================================="
-        echo "🚀 MuseTalk API deployed successfully!"
+        echo "MuseTalk API deployed successfully!"
         echo "=========================================="
         echo "API URL: https://$APP_URL"
         echo "Health: https://$APP_URL/api/v1/health"
@@ -191,7 +154,7 @@ jobs:
     - name: Notify on failure
       if: failure()
       run: |
-        echo "❌ Deployment failed!"
+        echo "Deployment failed!"
         echo "Check the logs above for details."
         echo "You can also check:"
         echo "  flyctl logs --app talking-head-api"
