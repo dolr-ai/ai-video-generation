@@ -6,7 +6,7 @@ on:
     branches: [ talking-head ]
     paths:
       - 'MuseTalk/**'
-      - '.github/workflows/deploy.yml'
+      - '.github/workflows/deploy-fly.yml'
 
   # Allow manual deployment
   workflow_dispatch:
@@ -49,11 +49,11 @@ jobs:
         echo "=========================================="
         echo "📥 Downloading models from GCS..."
         echo "=========================================="
-        
+
         # Download models from GCS bucket
         echo "Downloading from GCS bucket: ${{ secrets.GCS_BUCKET || 'talking-head-models' }}"
         gsutil -m cp -r gs://${{ secrets.GCS_BUCKET || 'talking-head-models' }}/models .
-        
+
         # Show downloaded files
         echo "Downloaded models:"
         find models -type f -name "*.pth" -o -name "*.bin" -o -name "*.pt" | head -10
@@ -63,7 +63,7 @@ jobs:
       run: |
         cd MuseTalk
         echo "Creating GPU-enabled volumes if they don't exist..."
-        
+
         # Check and create models volume with GPU constraint
         if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_models"; then
           echo "Creating models volume (100GB) with L40S GPU constraint..."
@@ -75,8 +75,8 @@ jobs:
         else
           echo "Models volume already exists"
         fi
-        
-        # Check and create storage volume with GPU constraint  
+
+        # Check and create storage volume with GPU constraint
         if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_storage"; then
           echo "Creating storage volume (50GB) with L40S GPU constraint..."
           flyctl volumes create musetalk_storage \
@@ -101,16 +101,16 @@ jobs:
         echo "=========================================="
         echo "📤 Uploading models to Fly.io volume..."
         echo "=========================================="
-        
+
         # Check if models already exist in volume
         echo "Checking if models already exist..."
         MODELS_EXIST=$(flyctl ssh console --app talking-head-api -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded && echo 'exists' || echo 'missing'" 2>/dev/null || echo 'missing')
-        
+
         if [ "$MODELS_EXIST" = "exists" ]; then
           echo "✅ Models already exist in volume, skipping upload"
         else
           echo "📦 Uploading models directly to persistent volume..."
-          
+
           # Upload entire models directory using sftp
           flyctl ssh sftp shell --app talking-head-api << 'EOF'
           lcd models
@@ -118,17 +118,17 @@ jobs:
           put -r . models
           quit
         EOF
-          
+
           # Create marker file
           flyctl ssh console --app talking-head-api -C "touch /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"
-          
+
           # Verify upload
           echo "Verifying models in volume:"
           flyctl ssh console --app talking-head-api -C "find /workspace/ai-video-generation/MuseTalk/models -type f -name '*.pth' -o -name '*.bin' -o -name '*.pt' | head -10"
-          
+
           echo "✅ Models uploaded successfully to persistent volume!"
         fi
-        
+
         # Show final volume usage
         echo "Final volume disk usage:"
         flyctl ssh console --app talking-head-api -C "df -h /workspace/ai-video-generation/MuseTalk/models/ 2>/dev/null || df -h /"
