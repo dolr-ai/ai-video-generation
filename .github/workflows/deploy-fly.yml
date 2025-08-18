@@ -26,7 +26,9 @@ env:
 jobs:
   deploy:
     name: Deploy MuseTalk API
-    runs-on: ubuntu-latest
+    # Using larger GitHub-hosted runner with more resources
+    # Options: ubuntu-latest-4-cores (16GB RAM), ubuntu-latest-8-cores (32GB RAM), ubuntu-latest-16-cores (64GB RAM)
+    runs-on: ubuntu-latest-8-cores  # 8 vCPUs, 32GB RAM, 300GB SSD storage
 
     steps:
     - name: Checkout code
