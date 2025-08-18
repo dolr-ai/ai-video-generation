@@ -1,9 +1,4 @@
-# Minimal fly.toml - all config in one place
-app = 'talking-head-api'
-primary_region = 'ord'
-
-[build]
-  dockerfile = 'fly/Dockerfile'
+# Minimal fly.toml - app name and region specified in deploy command
 
 [env]
   PYTHONUNBUFFERED = "1"

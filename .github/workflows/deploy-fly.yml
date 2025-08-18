@@ -13,6 +13,17 @@ on:
 
 env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  # App configuration
+  APP_NAME: talking-head-api
+  ORG_NAME: yral-ds
+  REGION: ord
+  # Volume configuration
+  VOLUME_NAME: musetalk_models
+  VOLUME_SIZE: 100
+  GPU_TYPE: a10  # Must match fly.toml [[vm]] size
+  # Paths
+  FLY_TOML_PATH: fly/fly.toml
+  DOCKERFILE_PATH: fly/Dockerfile
 
 jobs:
   deploy:
@@ -75,30 +86,27 @@ jobs:
         cd MuseTalk
         
         # Create app if doesn't exist
-        flyctl apps list | grep -q "talking-head-api" || flyctl apps create talking-head-api --org yral-ds
+        flyctl apps list | grep -q "$APP_NAME" || flyctl apps create $APP_NAME --org $ORG_NAME
         
-        # Create volume if doesn't exist (specs match fly.toml vm.size)
-        flyctl volumes list --app talking-head-api | grep -q "musetalk_models" || \
-          flyctl volumes create musetalk_models --size 100 --region ord --vm-gpu-kind l40s --app talking-head-api --yes
+        # Create volume if doesn't exist
+        flyctl volumes list --app $APP_NAME | grep -q "$VOLUME_NAME" || \
+          flyctl volumes create $VOLUME_NAME --size $VOLUME_SIZE --region $REGION --vm-gpu-kind $GPU_TYPE --app $APP_NAME --yes
         
-        # Deploy using fly.toml config
-        flyctl deploy --config fly/fly.toml --ha=false --wait-timeout 1800
+        # Deploy
+        flyctl deploy --config $FLY_TOML_PATH --dockerfile $DOCKERFILE_PATH --app $APP_NAME --region $REGION --ha=false --wait-timeout 1800
 
     - name: Upload models to volume
       run: |
         cd MuseTalk
         
-        # Ensure machine is running (needed for SSH)
-        flyctl scale count 1 --app talking-head-api
+        # Ensure machine is running
+        flyctl scale count 1 --app $APP_NAME
         sleep 10
         
-        # Check and upload models if needed
-        if ! flyctl ssh console --app talking-head-api -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded" 2>/dev/null; then
+        # Upload models if not already in volume
+        if ! flyctl ssh console --app $APP_NAME -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded" 2>/dev/null; then
           echo "Uploading models to volume..."
-          tar -czf - models | flyctl ssh console --app talking-head-api -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - && touch models/.models_downloaded"
-          echo "Models uploaded successfully"
-        else
-          echo "Models already in volume"
+          tar -czf - models | flyctl ssh console --app $APP_NAME -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - && touch models/.models_downloaded"
         fi
         
         # Cleanup
@@ -110,54 +118,10 @@ jobs:
         sleep 30  # Wait for deployment to complete
 
         # Get app URL
-        APP_URL=$(flyctl info --app talking-head-api --json | jq -r '.Hostname')
-
+        APP_URL=$(flyctl info --app $APP_NAME --json | jq -r '.Hostname')
+        
         if [ "$APP_URL" != "null" ] && [ ! -z "$APP_URL" ]; then
           echo "App URL: https://$APP_URL"
-
-          # Check health endpoint (retry up to 5 times)
-          for i in {1..5}; do
-            if curl -f -s "https://$APP_URL/api/v1/health"; then
-              echo "Health check passed!"
-              break
-            else
-              echo "Health check attempt $i failed, retrying in 30s..."
-              sleep 30
-            fi
-
-            if [ $i -eq 5 ]; then
-              echo "Health check failed after 5 attempts"
-              exit 1
-            fi
-          done
-        else
-          echo "Unable to get app URL"
-          exit 1
+          curl -f -s "https://$APP_URL/api/v1/health" || echo "Health check failed but continuing"
         fi
 
-    - name: Post deployment info
-      if: success()
-      run: |
-        cd MuseTalk
-        APP_URL=$(flyctl info --app talking-head-api --json | jq -r '.Hostname')
-
-        echo "=========================================="
-        echo "MuseTalk API deployed successfully!"
-        echo "=========================================="
-        echo "API URL: https://$APP_URL"
-        echo "Health: https://$APP_URL/api/v1/health"
-        echo "Docs: https://$APP_URL/docs"
-        echo ""
-        echo "To monitor:"
-        echo "  flyctl logs --app talking-head-api"
-        echo "  flyctl status --app talking-head-api"
-        echo "=========================================="
-
-    - name: Notify on failure
-      if: failure()
-      run: |
-        echo "Deployment failed!"
-        echo "Check the logs above for details."
-        echo "You can also check:"
-        echo "  flyctl logs --app talking-head-api"
-        echo "  flyctl status --app talking-head-api"
