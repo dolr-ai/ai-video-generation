@@ -10,15 +10,6 @@ on:
 
   # Allow manual deployment
   workflow_dispatch:
-    inputs:
-      environment:
-        description: 'Deployment environment'
-        required: true
-        default: 'production'
-        type: choice
-        options:
-          - production
-          - staging
 
 env:
   FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
