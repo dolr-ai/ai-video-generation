@@ -42,11 +42,34 @@ jobs:
     - name: Setup Fly CLI
       uses: superfly/flyctl-actions/setup-flyctl@master
 
-    # Skip volume creation - using ephemeral storage for now
-    # - name: Create persistent volume
-    #   run: |
-    #     cd MuseTalk
-    #     echo "Skipping volume creation - using ephemeral storage"
+    - name: Create persistent volumes with GPU constraints
+      run: |
+        cd MuseTalk
+        echo "Creating GPU-enabled volumes if they don't exist..."
+        
+        # Check and create models volume with GPU constraint
+        if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_models"; then
+          echo "Creating models volume (100GB) with L40S GPU constraint..."
+          flyctl volumes create musetalk_models \
+            --size 100 \
+            --region ord \
+            --vm-gpu-kind l40s \
+            --app talking-head-api || echo "Volume creation failed, may already exist"
+        else
+          echo "Models volume already exists"
+        fi
+        
+        # Check and create storage volume with GPU constraint  
+        if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_storage"; then
+          echo "Creating storage volume (50GB) with L40S GPU constraint..."
+          flyctl volumes create musetalk_storage \
+            --size 50 \
+            --region ord \
+            --vm-gpu-kind l40s \
+            --app talking-head-api || echo "Volume creation failed, may already exist"
+        else
+          echo "Storage volume already exists"
+        fi
 
     - name: Deploy to Fly.io
       run: |

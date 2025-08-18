@@ -54,9 +54,13 @@ download_models_from_gcs() {
     return 0
 }
 
-# Check if models are mounted or need to be downloaded
-if [ ! -f "$MODELS_DIR/musetalkV15/unet.pth" ]; then
-    echo "⚠️  Model weights not found in $MODELS_DIR"
+# Check if models are in volume or need to be downloaded
+MODEL_MARKER="$MODELS_DIR/.models_downloaded"
+
+echo "📂 Checking for models in RunPod volume 'talking-head-models'..."
+if [ ! -f "$MODEL_MARKER" ] || [ ! -f "$MODELS_DIR/musetalkV15/unet.pth" ]; then
+    echo "📥 Models not found in volume. Starting download..."
+    echo "This will only happen once - models will persist in volume."
     
     # Try to download from GCS
     if command -v gsutil &> /dev/null; then
@@ -68,12 +72,18 @@ if [ ! -f "$MODELS_DIR/musetalkV15/unet.pth" ]; then
             echo "   3. Service account has access to the bucket"
             exit 1
         }
+        
+        # Mark models as downloaded
+        echo "✅ Models downloaded successfully to volume!"
+        touch "$MODEL_MARKER"
+        echo "$(date): Models downloaded from GCS" >> "$MODEL_MARKER"
     else
         echo "❌ gsutil not available for GCS download"
         exit 1
     fi
 else
-    echo "✅ Models found in $MODELS_DIR"
+    echo "✅ Models already present in RunPod volume."
+    echo "📅 Volume marker: $(cat $MODEL_MARKER 2>/dev/null || echo 'No timestamp')"
 fi
 
 # Verify required model files exist

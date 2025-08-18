@@ -58,10 +58,14 @@ kill_timeout = 30
   memory = "16gb"
   cpus = 4
 
-# No persistent volumes - ephemeral storage only
-# [[mounts]]
-#   source = "musetalk_models"
-#   destination = "/workspace/ai-video-generation/MuseTalk/persistent"
+# Persistent volumes for models and storage
+[[mounts]]
+  source = "musetalk_models"
+  destination = "/workspace/ai-video-generation/MuseTalk/models"
+
+[[mounts]]
+  source = "musetalk_storage"
+  destination = "/workspace/ai-video-generation/MuseTalk/storage"
 
 # Fly.io metrics
 [metrics]
