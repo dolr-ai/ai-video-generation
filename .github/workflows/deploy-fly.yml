@@ -17,7 +17,7 @@ env:
 jobs:
   deploy:
     name: Deploy MuseTalk API
-    runs-on: ubuntu-latest-4-cores
+    runs-on: ubuntu-latest
 
     steps:
     - name: Debug Start
@@ -70,12 +70,12 @@ jobs:
         find models -type f -name "*.pth" -o -name "*.bin" -o -name "*.pt" | head -10
         du -sh models/*
 
-    - name: Create persistent volumes with GPU constraints
+    - name: Create persistent volume with GPU constraint
       run: |
         cd MuseTalk
-        echo "Creating GPU-enabled volumes if they don't exist..."
+        echo "Creating GPU-enabled volume if it doesn't exist..."
 
-        # Check and create models volume with GPU constraint
+        # Check and create models volume with GPU constraint (only 1 volume supported per machine)
         if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_models"; then
           echo "Creating models volume (100GB) with L40S GPU constraint..."
           flyctl volumes create musetalk_models \
@@ -87,17 +87,6 @@ jobs:
           echo "Models volume already exists"
         fi
 
-        # Check and create storage volume with GPU constraint
-        if ! flyctl volumes list --app talking-head-api | grep -q "musetalk_storage"; then
-          echo "Creating storage volume (50GB) with L40S GPU constraint..."
-          flyctl volumes create musetalk_storage \
-            --size 50 \
-            --region ord \
-            --vm-gpu-kind l40s \
-            --app talking-head-api || echo "Volume creation failed, may already exist"
-        else
-          echo "Storage volume already exists"
-        fi
 
     - name: Deploy to Fly.io
       run: |
@@ -143,6 +132,12 @@ jobs:
         # Show final volume usage
         echo "Final volume disk usage:"
         flyctl ssh console --app talking-head-api -C "df -h /workspace/ai-video-generation/MuseTalk/models/ 2>/dev/null || df -h /"
+        
+        # Clean up models from runner to free space
+        echo "Cleaning up models from GitHub runner..."
+        rm -rf models/
+        echo "Runner disk space after cleanup:"
+        df -h
 
     - name: Health check
       run: |

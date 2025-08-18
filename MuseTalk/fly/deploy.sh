@@ -45,8 +45,8 @@ else
     flyctl apps create musetalk-api --org personal
 fi
 
-# Create volumes if they don't exist (WITH GPU CONSTRAINTS)
-echo "Setting up persistent volumes with GPU constraints..."
+# Create volume if it doesn't exist (WITH GPU CONSTRAINT - only 1 volume supported)
+echo "Setting up persistent volume with GPU constraint..."
 if ! flyctl volumes list --app musetalk-api | grep -q "musetalk_models"; then
     echo "Creating models volume (100GB) with L40S GPU constraint..."
     flyctl volumes create musetalk_models \
@@ -54,15 +54,8 @@ if ! flyctl volumes list --app musetalk-api | grep -q "musetalk_models"; then
         --region ord \
         --vm-gpu-kind l40s \
         --app musetalk-api
-fi
-
-if ! flyctl volumes list --app musetalk-api | grep -q "musetalk_storage"; then
-    echo "Creating storage volume (50GB) with L40S GPU constraint..."
-    flyctl volumes create musetalk_storage \
-        --size 50 \
-        --region ord \
-        --vm-gpu-kind l40s \
-        --app musetalk-api
+else
+    echo "Models volume already exists"
 fi
 
 # Environment variables are set in fly.toml
