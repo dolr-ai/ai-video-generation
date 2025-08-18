@@ -88,15 +88,17 @@ jobs:
       run: |
         cd MuseTalk
         
+        # Ensure machine is running (needed for SSH)
+        flyctl scale count 1 --app talking-head-api
+        sleep 10
+        
         # Check and upload models if needed
         if ! flyctl ssh console --app talking-head-api -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded" 2>/dev/null; then
-          flyctl ssh sftp shell --app talking-head-api << 'EOF'
-          lcd models
-          cd /workspace/ai-video-generation/MuseTalk
-          put -r . models
-          quit
-        EOF
-          flyctl ssh console --app talking-head-api -C "touch /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"
+          echo "Uploading models to volume..."
+          tar -czf - models | flyctl ssh console --app talking-head-api -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - && touch models/.models_downloaded"
+          echo "Models uploaded successfully"
+        else
+          echo "Models already in volume"
         fi
         
         # Cleanup
