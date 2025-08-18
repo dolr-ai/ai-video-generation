@@ -56,6 +56,12 @@ if [ ! -f "$MODEL_MARKER" ]; then
 else
     echo "MODELS ALREADY PRESENT IN VOLUME"
     echo "Using pre-loaded models from GCS"
+    
+    # List actual model files to verify they exist
+    echo "Verifying model files:"
+    ls -la "$MODELS_DIR/musetalk/" 2>/dev/null | head -5
+    ls -la "$MODELS_DIR/musetalkV15/" 2>/dev/null | head -5
+    
     # Verify all critical model files exist
     MISSING_FILES=()
     [ ! -f "$MODELS_DIR/musetalk/pytorch_model.bin" ] && MISSING_FILES+=("musetalk/pytorch_model.bin")

@@ -9,6 +9,7 @@ ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV NVIDIA_VISIBLE_DEVICES=all
 ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility
+ENV PYTHONPATH=/workspace/ai-video-generation/MuseTalk:$PYTHONPATH
 
 # Install system dependencies
 RUN apt-get update && apt-get install -y \
@@ -72,6 +73,10 @@ RUN uv pip install -r requirements.txt
 
 # Now copy the entire MuseTalk application
 COPY . /workspace/ai-video-generation/MuseTalk/
+
+# Install MuseTalk as a package
+WORKDIR /workspace/ai-video-generation/MuseTalk
+RUN pip install -e .
 
 # Create necessary directories (no persistent volume, just local storage)
 RUN mkdir -p /workspace/ai-video-generation/MuseTalk/models \

@@ -191,6 +191,125 @@ tar -czf - models | flyctl ssh console --app talking-head-api -C "tar -xzf - -C 
 
 ---
 
+### 10. Machine Failed to Start
+**Error:**
+```
+Machine failed to start: Unknown response while starting machine
+```
+
+**Cause:**
+- Docker container crash on startup
+- Missing dependencies or environment variables
+- Script execution failure in CMD or ENTRYPOINT
+- GPU driver issues
+- Memory/resource constraints
+
+**Troubleshooting Steps:**
+1. Check machine logs for startup errors:
+```bash
+flyctl logs --app talking-head-api
+flyctl machines list --app talking-head-api
+```
+
+2. Check if the start script has proper permissions:
+```bash
+flyctl ssh console --app talking-head-api -C "ls -la /start-servers.sh"
+```
+
+3. Common fixes:
+- Ensure start script is executable: `RUN chmod +x /start-servers.sh`
+- Check if all required directories exist
+- Verify GPU drivers are properly initialized
+- Check if models are accessible in the mounted volume
+
+4. Debug the container locally:
+```bash
+# Build and run locally to test
+docker build -f fly/Dockerfile -t test-image .
+docker run -it test-image /bin/bash
+```
+
+**Solution:**
+- Add better error handling in start-servers.sh
+- Ensure all paths exist before accessing them
+- Add health checks to verify services start correctly
+
+---
+
+### 11. Models Not Being Uploaded to Volume
+**Error:**
+```
+exec: "cd": executable file not found in $PATH
+Error: ssh shell: ssh: command cd /workspace/ai-video-generation/MuseTalk && tar -xzf - --no-same-owner --no-same-permissions failed
+tar: -: Wrote only 8192 of 10240 bytes
+```
+
+**Cause:**
+- The tar upload command using `cd` fails because `cd` is a shell builtin
+- SSH command execution issues with tar pipes
+- Volume directories exist but are empty (no actual model files)
+
+**Solution:**
+- Use tar with `-C` flag instead of `cd` command
+- Increased wait time for machine startup to 5 minutes
+- Added verification to check actual model files, not just directories
+
+**Updated workflow upload step:**
+```bash
+# Ensure machine is running
+flyctl scale count 1 --app $APP_NAME
+sleep 300  # Wait 5 minutes for machine to fully start
+
+# Upload models using tar -C flag instead of cd
+tar -czf - models | flyctl ssh console --app $APP_NAME -C "tar -xzf - -C /workspace/ai-video-generation/MuseTalk --no-same-owner --no-same-permissions"
+
+# Verify upload was successful
+flyctl ssh console --app $APP_NAME -C "ls -la /workspace/ai-video-generation/MuseTalk/models/"
+```
+
+---
+
+### 12. NVIDIA Driver Not Detected
+**Warning:**
+```
+WARNING: The NVIDIA driver on your system is too old (found version 11040). Please update your GPU driver
+```
+
+**Cause:**
+- GPU drivers may not be immediately available when container starts
+- CUDA runtime version mismatch
+
+**Solution:**
+- Added GPU status check at startup
+- Using nvidia/cuda:11.8.0 base image which matches Fly.io GPU drivers
+- Added environment variables for NVIDIA driver capabilities
+
+---
+
+### 13. Python Module Import Error
+**Error:**
+```
+ModuleNotFoundError: No module named 'musetalk'
+```
+
+**Cause:**
+- The MuseTalk package wasn't installed in the Docker image
+- Python couldn't find the musetalk module for imports
+
+**Solution:**
+- Install MuseTalk as a package using setup.py:
+```dockerfile
+# Install MuseTalk as a package
+WORKDIR /workspace/ai-video-generation/MuseTalk
+RUN pip install -e .
+```
+- Also added PYTHONPATH environment variable as backup:
+```dockerfile
+ENV PYTHONPATH=/workspace/ai-video-generation/MuseTalk:$PYTHONPATH
+```
+
+---
+
 ## Current Working Workflow
 
 ### Configuration Structure

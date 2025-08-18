@@ -117,8 +117,8 @@ jobs:
           flyctl ssh console --app $APP_NAME -C "mkdir -p /workspace/ai-video-generation/MuseTalk/models"
           
           echo "Uploading models (this may take several minutes)..."
-          # Use a more reliable tar command with better error handling
-          tar -czf - models | flyctl ssh console --app $APP_NAME -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - --no-same-owner --no-same-permissions"
+          # Use tar with -C flag to change directory instead of using cd
+          tar -czf - models | flyctl ssh console --app $APP_NAME -C "tar -xzf - -C /workspace/ai-video-generation/MuseTalk --no-same-owner --no-same-permissions"
           
           # Verify upload was successful
           echo "Verifying model upload..."
