@@ -19,11 +19,12 @@ if ! command -v gdown &> /dev/null; then
     pip install --upgrade gdown
 fi
 
-# Set the checkpoints directory
-CheckpointsDir="models"
+# Set the checkpoints directory to the persistent volume mount point
+# This matches the mount point in fly.toml
+CheckpointsDir="/workspace/ai-video-generation/MuseTalk/models"
 
-# Create necessary directories
-mkdir -p models/musetalk models/musetalkV15 models/syncnet models/dwpose models/face-parse-bisent models/sd-vae models/whisper
+# Create necessary directories in the persistent volume
+mkdir -p $CheckpointsDir/musetalk $CheckpointsDir/musetalkV15 $CheckpointsDir/syncnet $CheckpointsDir/dwpose $CheckpointsDir/face-parse-bisent $CheckpointsDir/sd-vae $CheckpointsDir/whisper
 
 echo ""
 echo "📦 Downloading MuseTalk V1.0 weights..."
@@ -83,15 +84,15 @@ fi
 echo ""
 echo "🔍 Verifying downloaded models..."
 CRITICAL_FILES=(
-    "models/musetalk/musetalk.json"
-    "models/musetalk/pytorch_model.bin"
-    "models/musetalkV15/musetalk.json"
-    "models/musetalkV15/unet.pth"
-    "models/sd-vae/diffusion_pytorch_model.bin"
-    "models/whisper/pytorch_model.bin"
-    "models/dwpose/dw-ll_ucoco_384.pth"
-    "models/syncnet/latentsync_syncnet.pt"
-    "models/face-parse-bisent/79999_iter.pth"
+    "$CheckpointsDir/musetalk/musetalk.json"
+    "$CheckpointsDir/musetalk/pytorch_model.bin"
+    "$CheckpointsDir/musetalkV15/musetalk.json"
+    "$CheckpointsDir/musetalkV15/unet.pth"
+    "$CheckpointsDir/sd-vae/diffusion_pytorch_model.bin"
+    "$CheckpointsDir/whisper/pytorch_model.bin"
+    "$CheckpointsDir/dwpose/dw-ll_ucoco_384.pth"
+    "$CheckpointsDir/syncnet/latentsync_syncnet.pt"
+    "$CheckpointsDir/face-parse-bisent/79999_iter.pth"
 )
 
 ALL_GOOD=true
@@ -106,7 +107,7 @@ done
 
 if [ "$ALL_GOOD" = true ]; then
     # Create marker file to indicate successful download
-    touch models/.models_downloaded
+    touch $CheckpointsDir/.models_downloaded
     echo ""
     echo "=========================================="
     echo "✅ All weights have been downloaded successfully!"

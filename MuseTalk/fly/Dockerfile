@@ -79,17 +79,8 @@ RUN mkdir -p /workspace/ai-video-generation/MuseTalk/models \
     /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/videos \
     /workspace/ai-video-generation/MuseTalk/fastapi_server/storage/uploads
 
-# Install tools for model downloading (including hf CLI)
-RUN uv pip install --upgrade huggingface_hub[cli] gdown
-
-# Download model weights script
-COPY fly/download_models.sh /download_models.sh
-RUN chmod +x /download_models.sh
-
-# Download all models during build
-RUN echo "Downloading models during build..." && \
-    /download_models.sh && \
-    echo "Models downloaded successfully"
+# Models are pre-loaded to persistent volume via GitHub Actions from GCS
+# No need for download tools in the image
 
 # Copy startup script
 COPY fly/start-servers.sh /start-servers.sh

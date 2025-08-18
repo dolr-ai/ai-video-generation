@@ -44,6 +44,30 @@ jobs:
     - name: Setup Fly CLI
       uses: superfly/flyctl-actions/setup-flyctl@master
 
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Download models from GCS
+      run: |
+        cd MuseTalk
+        echo "=========================================="
+        echo "📥 Downloading models from GCS..."
+        echo "=========================================="
+        
+        # Download models from GCS bucket
+        echo "Downloading from GCS bucket: ${{ secrets.GCS_BUCKET || 'talking-head-models' }}"
+        gsutil -m cp -r gs://${{ secrets.GCS_BUCKET || 'talking-head-models' }}/models .
+        
+        # Show downloaded files
+        echo "Downloaded models:"
+        find models -type f -name "*.pth" -o -name "*.bin" -o -name "*.pt" | head -10
+        du -sh models/*
+
     - name: Create persistent volumes with GPU constraints
       run: |
         cd MuseTalk
@@ -79,6 +103,44 @@ jobs:
         echo "Deploying MuseTalk to Fly.io..."
         # Increased timeout to 30 minutes for model downloads and startup
         flyctl deploy --config fly/fly.toml --app talking-head-api --ha=false --wait-timeout 1800
+
+    - name: Upload models to Fly.io volume
+      run: |
+        cd MuseTalk
+        echo "=========================================="
+        echo "📤 Uploading models to Fly.io volume..."
+        echo "=========================================="
+        
+        # Check if models already exist in volume
+        echo "Checking if models already exist..."
+        MODELS_EXIST=$(flyctl ssh console --app talking-head-api -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded && echo 'exists' || echo 'missing'" 2>/dev/null || echo 'missing')
+        
+        if [ "$MODELS_EXIST" = "exists" ]; then
+          echo "✅ Models already exist in volume, skipping upload"
+        else
+          echo "📦 Uploading models directly to persistent volume..."
+          
+          # Upload entire models directory using sftp
+          flyctl ssh sftp shell --app talking-head-api << 'EOF'
+          lcd models
+          cd /workspace/ai-video-generation/MuseTalk
+          put -r . models
+          quit
+        EOF
+          
+          # Create marker file
+          flyctl ssh console --app talking-head-api -C "touch /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"
+          
+          # Verify upload
+          echo "Verifying models in volume:"
+          flyctl ssh console --app talking-head-api -C "find /workspace/ai-video-generation/MuseTalk/models -type f -name '*.pth' -o -name '*.bin' -o -name '*.pt' | head -10"
+          
+          echo "✅ Models uploaded successfully to persistent volume!"
+        fi
+        
+        # Show final volume usage
+        echo "Final volume disk usage:"
+        flyctl ssh console --app talking-head-api -C "df -h /workspace/ai-video-generation/MuseTalk/models/ 2>/dev/null || df -h /"
 
     - name: Health check
       run: |

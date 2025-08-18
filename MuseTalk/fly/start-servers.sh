@@ -7,34 +7,38 @@ echo "Script path: $0"
 echo "Environment:"
 env | grep -E "(PORT|HOST|PYTHONPATH)" || true
 
-# Ensure models directory exists
-mkdir -p /workspace/ai-video-generation/MuseTalk/models
+# Use persistent volume for models (mounted at /workspace/ai-video-generation/MuseTalk/models)
+# This is the mount point defined in fly.toml
+MODELS_DIR="/workspace/ai-video-generation/MuseTalk/models"
+mkdir -p "$MODELS_DIR"
 
 # Check if models need to be downloaded
 # This is crucial for persistent volumes on Fly.io
-MODELS_DIR="/workspace/ai-video-generation/MuseTalk/models"
 MODEL_MARKER="$MODELS_DIR/.models_downloaded"
 
-echo "Checking for model files in volume..."
+echo "=========================================="
+echo "📂 VOLUME STATUS CHECK"
+echo "=========================================="
+echo "Checking persistent volume at: $MODELS_DIR"
+ls -la "$MODELS_DIR" 2>/dev/null || echo "Volume directory not accessible yet"
+echo "------------------------------------------"
+
 if [ ! -f "$MODEL_MARKER" ]; then
-    echo "📥 Models not found in volume. Starting download..."
-    echo "This will only happen once - models will persist in volume."
+    echo "❌ ERROR: Models not found in volume!"
+    echo "Models should have been pre-loaded from GCS during deployment."
+    echo "Please check the GitHub Actions logs for upload errors."
+    echo "=========================================="
     
-    if [ -f "/download_models.sh" ]; then
-        /download_models.sh
-        if [ $? -eq 0 ]; then
-            echo "✅ Models downloaded successfully!"
-            touch "$MODEL_MARKER"
-        else
-            echo "❌ Model download failed!"
-            exit 1
-        fi
-    else
-        echo "❌ Error: Model download script not found!"
-        exit 1
-    fi
+    # Show what's in the models directory
+    echo "Current models directory contents:"
+    ls -la "$MODELS_DIR" 2>/dev/null || echo "Models directory does not exist"
+    
+    # Exit with error since models are required
+    echo "Cannot start servers without models. Exiting..."
+    exit 1
 else
-    echo "✅ Models already present in volume."
+    echo "✅ MODELS ALREADY PRESENT IN VOLUME"
+    echo "🚀 Using pre-loaded models from GCS"
     # Verify key model files exist
     if [ ! -f "$MODELS_DIR/musetalkV15/unet.pth" ]; then
         echo "⚠️  Warning: Some model files may be missing. Removing marker and re-downloading..."
