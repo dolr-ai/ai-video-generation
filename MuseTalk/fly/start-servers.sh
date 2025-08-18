@@ -1,11 +1,18 @@
 #!/bin/bash
 set -e
 
-echo "🚀 Starting MuseTalk FastAPI Servers on Fly.io..."
+echo "Starting MuseTalk FastAPI Servers on Fly.io..."
 echo "Current directory: $(pwd)"
 echo "Script path: $0"
 echo "Environment:"
-env | grep -E "(PORT|HOST|PYTHONPATH)" || true
+env | grep -E "(PORT|HOST|PYTHONPATH|NVIDIA)" || true
+
+# Check GPU availability
+echo "==========================================="
+echo "GPU STATUS CHECK"
+echo "==========================================="
+nvidia-smi || echo "WARNING: nvidia-smi not available, GPU may not be accessible"
+python -c "import torch; print(f'PyTorch CUDA available: {torch.cuda.is_available()}'); print(f'CUDA device count: {torch.cuda.device_count() if torch.cuda.is_available() else 0}')" || true
 
 # Use persistent volume for models (mounted at /workspace/ai-video-generation/MuseTalk/models)
 # This is the mount point defined in fly.toml
@@ -17,31 +24,54 @@ mkdir -p "$MODELS_DIR"
 MODEL_MARKER="$MODELS_DIR/.models_downloaded"
 
 echo "=========================================="
-echo "📂 VOLUME STATUS CHECK"
+echo "VOLUME STATUS CHECK"
 echo "=========================================="
 echo "Checking persistent volume at: $MODELS_DIR"
 ls -la "$MODELS_DIR" 2>/dev/null || echo "Volume directory not accessible yet"
 echo "------------------------------------------"
 
 if [ ! -f "$MODEL_MARKER" ]; then
-    echo "❌ ERROR: Models not found in volume!"
+    echo "WARNING: Models not found in volume!"
     echo "Models should have been pre-loaded from GCS during deployment."
-    echo "Please check the GitHub Actions logs for upload errors."
     echo "=========================================="
     
     # Show what's in the models directory
     echo "Current models directory contents:"
     ls -la "$MODELS_DIR" 2>/dev/null || echo "Models directory does not exist"
     
-    # Exit with error since models are required
-    echo "Cannot start servers without models. Exiting..."
-    exit 1
+    # Try to download models as fallback
+    if [ -f "/download_models.sh" ]; then
+        echo "Attempting fallback model download..."
+        /download_models.sh
+        if [ $? -eq 0 ]; then
+            echo "Models downloaded successfully!"
+        else
+            echo "Model download failed. Cannot start servers without models."
+            exit 1
+        fi
+    else
+        echo "No download script available. Cannot start servers without models."
+        exit 1
+    fi
 else
-    echo "✅ MODELS ALREADY PRESENT IN VOLUME"
-    echo "🚀 Using pre-loaded models from GCS"
-    # Verify key model files exist
-    if [ ! -f "$MODELS_DIR/musetalkV15/unet.pth" ]; then
-        echo "⚠️  Warning: Some model files may be missing. Removing marker and re-downloading..."
+    echo "MODELS ALREADY PRESENT IN VOLUME"
+    echo "Using pre-loaded models from GCS"
+    # Verify all critical model files exist
+    MISSING_FILES=()
+    [ ! -f "$MODELS_DIR/musetalk/pytorch_model.bin" ] && MISSING_FILES+=("musetalk/pytorch_model.bin")
+    [ ! -f "$MODELS_DIR/musetalkV15/unet.pth" ] && MISSING_FILES+=("musetalkV15/unet.pth")
+    [ ! -f "$MODELS_DIR/sd-vae/diffusion_pytorch_model.bin" ] && MISSING_FILES+=("sd-vae/diffusion_pytorch_model.bin")
+    [ ! -f "$MODELS_DIR/whisper/pytorch_model.bin" ] && MISSING_FILES+=("whisper/pytorch_model.bin")
+    [ ! -f "$MODELS_DIR/dwpose/dw-ll_ucoco_384.pth" ] && MISSING_FILES+=("dwpose/dw-ll_ucoco_384.pth")
+    [ ! -f "$MODELS_DIR/syncnet/latentsync_syncnet.pt" ] && MISSING_FILES+=("syncnet/latentsync_syncnet.pt")
+    [ ! -f "$MODELS_DIR/face-parse-bisent/79999_iter.pth" ] && MISSING_FILES+=("face-parse-bisent/79999_iter.pth")
+    
+    if [ ${#MISSING_FILES[@]} -gt 0 ]; then
+        echo "Warning: Some model files are missing:"
+        for file in "${MISSING_FILES[@]}"; do
+            echo "  - $file"
+        done
+        echo "Removing marker and re-downloading..."
         rm "$MODEL_MARKER"
         exec "$0" "$@"  # Restart the script
     fi
@@ -119,10 +149,10 @@ start_model_server
 start_handler_server
 
 # Health check
-echo "🏥 Final health check..."
+echo "Final health check..."
 curl -s http://localhost:8000/api/v1/health | jq . || true
 
-echo "🎉 MuseTalk FastAPI Server is running!"
+echo "MuseTalk FastAPI Server is running!"
 echo "API available at port 8000"
 
 # Keep running and wait for signals

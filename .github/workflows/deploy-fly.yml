@@ -100,17 +100,41 @@ jobs:
         cd MuseTalk
         
         # Ensure machine is running
+        echo "Ensuring machine is running..."
         flyctl scale count 1 --app $APP_NAME
-        sleep 10
+        sleep 300  # Wait 5 minutes for machine to fully start
         
-        # Upload models if not already in volume
-        if ! flyctl ssh console --app $APP_NAME -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded" 2>/dev/null; then
-          echo "Uploading models to volume..."
-          tar -czf - models | flyctl ssh console --app $APP_NAME -C "tar -xzf - -C /workspace/ai-video-generation/MuseTalk"
+        # Check machine status
+        flyctl machines list --app $APP_NAME
+        
+        # Upload models to volume
+        echo "Checking if models already exist in volume..."
+        if flyctl ssh console --app $APP_NAME -C "ls -la /workspace/ai-video-generation/MuseTalk/models/ | grep -q 'musetalkV15'" 2>/dev/null; then
+          echo "Models already exist in volume, skipping upload"
+        else
+          echo "Models not found in volume, uploading..."
+          echo "Creating models directory if it doesn't exist..."
+          flyctl ssh console --app $APP_NAME -C "mkdir -p /workspace/ai-video-generation/MuseTalk/models"
+          
+          echo "Uploading models (this may take several minutes)..."
+          # Use a more reliable tar command with better error handling
+          tar -czf - models | flyctl ssh console --app $APP_NAME -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - --no-same-owner --no-same-permissions"
+          
+          # Verify upload was successful
+          echo "Verifying model upload..."
+          flyctl ssh console --app $APP_NAME -C "ls -la /workspace/ai-video-generation/MuseTalk/models/"
+          
+          # Create marker file
           flyctl ssh console --app $APP_NAME -C "touch /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"
+          
+          echo "Model upload completed"
         fi
         
-        # Cleanup
+        # Verify models are accessible
+        echo "Final verification of models..."
+        flyctl ssh console --app $APP_NAME -C "find /workspace/ai-video-generation/MuseTalk/models -type f -name '*.pth' | head -5"
+        
+        # Cleanup local models
         rm -rf models/
 
     - name: Health check

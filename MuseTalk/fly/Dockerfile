@@ -82,9 +82,10 @@ RUN mkdir -p /workspace/ai-video-generation/MuseTalk/models \
 # Models are pre-loaded to persistent volume via GitHub Actions from GCS
 # No need for download tools in the image
 
-# Copy startup script
+# Copy startup script and download script
 COPY fly/start-servers.sh /start-servers.sh
-RUN chmod +x /start-servers.sh
+COPY fly/download_models.sh /download_models.sh
+RUN chmod +x /start-servers.sh /download_models.sh
 
 # No volumes - using ephemeral storage only
 
