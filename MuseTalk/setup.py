@@ -25,11 +25,13 @@ def read_requirements(filename):
 # Base requirements from MuseTalk
 base_requirements = read_requirements('requirements.txt')
 
-# Service-specific requirements
-service_requirements = read_requirements('service/requirements.txt')
+# FastAPI service requirements (if exists)
+fastapi_requirements = []
+if os.path.exists('fastapi_server/requirements.txt'):
+    fastapi_requirements = read_requirements('fastapi_server/requirements.txt')
 
 # Combine all requirements
-all_requirements = base_requirements + service_requirements
+all_requirements = base_requirements + fastapi_requirements
 
 setup(
     name="musetalk",

@@ -674,13 +674,11 @@ lsof -i :8001
 ## 📚 References and Resources
 
 ### Technical Documentation
-- **Flask Service**: `/workspace/ai-video-generation/MuseTalk/service/ARCHITECTURE.md`
 - **MuseTalk Paper**: [MuseTalk: Real-Time High Quality Lip Synchronization](https://github.com/TMElyralab/MuseTalk)
 - **FastAPI Documentation**: [https://fastapi.tiangolo.com/](https://fastapi.tiangolo.com/)
 
 ### Key Implementation Files
 - **Model Wrapper**: `core/musetalk_model.py:141` (File path pattern)
-- **Flask Reference**: `service/core/inference_handler.py:86` (Working implementation)
 - **Settings**: `config/settings.py` (Configuration management)
 
 ### Dependencies

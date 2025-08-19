@@ -327,7 +327,7 @@ For production deployments:
 ## 📚 Documentation
 
 - **Architecture Details**: See `ARCHITECTURE.md` for system design and data flow diagrams
-- **Flask Comparison**: See `/workspace/ai-video-generation/MuseTalk/service/ARCHITECTURE.md` for Flask service reference
+- **API Testing Guide**: See `/workspace/ai-video-generation/docs/talking-head-api-testing.md` for testing deployed services
 
 ---
 
