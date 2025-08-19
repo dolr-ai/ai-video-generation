@@ -57,7 +57,7 @@ setup(
     
     # Extra dependencies
     extras_require={
-        'api': service_requirements,
+        'api': fastapi_requirements,
         'dev': [
             'pytest>=6.0',
             'pytest-cov>=2.0',
