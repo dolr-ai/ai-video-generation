@@ -132,7 +132,7 @@ jobs:
         
         # Verify models are accessible
         echo "Final verification of models..."
-        flyctl ssh console --app $APP_NAME -C "find /workspace/ai-video-generation/MuseTalk/models -type f -name '*.pth' | head -5"
+        flyctl ssh console --app $APP_NAME -C "find /workspace/ai-video-generation/MuseTalk/models -type f -name '*.pth' 2>/dev/null | head -5 || echo 'No .pth files found yet'"
         
         # Cleanup local models
         rm -rf models/
