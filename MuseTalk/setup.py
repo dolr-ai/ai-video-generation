@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Setup script for MuseTalk with Flask API service
+Setup script for MuseTalk with FastAPI service
 """
 
 from setuptools import setup, find_packages
@@ -43,13 +43,13 @@ setup(
     url="https://github.com/TMElyralab/MuseTalk",
     
     # Package discovery
-    packages=find_packages(include=['musetalk*', 'service*']),
+    packages=find_packages(include=['musetalk*', 'fastapi_server*']),
     
     # Include package data
     include_package_data=True,
     package_data={
         'musetalk': ['**/*.py', '**/*.json', '**/*.yaml', '**/*.yml'],
-        'service': ['**/*.py', '**/*.json', '**/*.yaml', '**/*.yml'],
+        'fastapi_server': ['**/*.py', '**/*.json', '**/*.yaml', '**/*.yml'],
     },
     
     # Dependencies
@@ -69,7 +69,7 @@ setup(
     # Entry points for command-line scripts
     entry_points={
         'console_scripts': [
-            'musetalk-api=service.app:main',
+            'musetalk-api=fastapi_server.handler_server:main',
             'musetalk-inference=scripts.inference:main',
             'musetalk-realtime=scripts.realtime_inference:main',
         ],

@@ -11,7 +11,7 @@ license = {text = "MIT"}
 authors = [
     {name = "Lyra Lab, Tencent Music Entertainment"},
 ]
-keywords = ["talking-head", "video-generation", "lip-sync", "deepfake", "ai", "computer-vision", "flask-api"]
+keywords = ["talking-head", "video-generation", "lip-sync", "deepfake", "ai", "computer-vision", "fastapi"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
@@ -35,12 +35,12 @@ Documentation = "https://github.com/TMElyralab/MuseTalk/blob/main/README.md"
 "Bug Reports" = "https://github.com/TMElyralab/MuseTalk/issues"
 
 [project.scripts]
-musetalk-api = "service.app:main"
+musetalk-api = "fastapi_server.handler_server:main"
 musetalk-inference = "scripts.inference:main"
 musetalk-realtime = "scripts.realtime_inference:main"
 
 [tool.setuptools]
-packages = ["musetalk", "service"]
+packages = ["musetalk", "fastapi_server"]
 include-package-data = true
 
 [tool.setuptools.dynamic]
@@ -48,4 +48,4 @@ version = {attr = "musetalk.__version__"}
 
 [tool.setuptools.package-data]
 musetalk = ["**/*.py", "**/*.json", "**/*.yaml", "**/*.yml"]
-service = ["**/*.py", "**/*.json", "**/*.yaml", "**/*.yml"]
+fastapi_server = ["**/*.py", "**/*.json", "**/*.yaml", "**/*.yml"]
