@@ -452,6 +452,34 @@ flyctl apps destroy talking-head-api
 
 ---
 
+### 14. Missing musetalk Package __init__.py
+**Error:**
+```
+ModuleNotFoundError: musetalk
+```
+During `pip install -e .` in Dockerfile.
+
+**Cause:**
+- The `musetalk` directory was missing an `__init__.py` file at its root
+- The `pyproject.toml` was configured to read version from `musetalk.__version__`
+- Without the `__init__.py`, Python couldn't recognize `musetalk` as a package
+
+**Solution:**
+- Created `/workspace/ai-video-generation/MuseTalk/musetalk/__init__.py` with:
+```python
+"""
+MuseTalk: Real-Time High-Fidelity Video Dubbing via Spatio-Temporal Sampling
+"""
+
+__version__ = "1.5.0"
+
+# Package initialization
+__all__ = ['__version__']
+```
+- Changed `pip install -e .` to `uv pip install -e .` in Dockerfile for consistency
+
+---
+
 ## References
 - [Fly.io GPU Documentation](https://fly.io/docs/gpus/)
 - [Fly.io Volumes Documentation](https://fly.io/docs/volumes/)

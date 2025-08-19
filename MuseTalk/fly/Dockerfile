@@ -76,7 +76,7 @@ COPY . /workspace/ai-video-generation/MuseTalk/
 
 # Install MuseTalk as a package
 WORKDIR /workspace/ai-video-generation/MuseTalk
-RUN pip install -e .
+RUN uv pip install -e .
 
 # Create necessary directories (no persistent volume, just local storage)
 RUN mkdir -p /workspace/ai-video-generation/MuseTalk/models \
