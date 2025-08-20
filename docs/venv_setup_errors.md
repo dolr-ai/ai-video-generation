@@ -44,7 +44,47 @@ uv pip install "numpy==1.23.5" --force-reinstall
 2. Or, install NumPy 1.23.5 again AFTER installing all MMLab packages
 3. Consider pinning NumPy version in a constraints file
 
-## Error 2: Virtual Environment Path Issue (Non-Critical)
+## Error 2: CUDA Version Mismatch when Building MMCV (CRITICAL ERROR)
+
+### When It Occurred
+Step 6: When attempting to install MMCV 2.0.1 using `mim install "mmcv==2.0.1"`
+
+### Exact Error Message
+```
+RuntimeError:
+The detected CUDA version (12.8) mismatches the version that was used to compile
+PyTorch (11.8). Please make sure to use the same CUDA versions.
+
+ERROR: Failed building wheel for mmcv
+error: failed-wheel-build-for-install
+```
+
+### Root Cause Analysis
+- System has CUDA 12.8 installed
+- PyTorch was installed with CUDA 11.8 support (`torch==2.0.1+cu118`)
+- `mim install` attempted to build MMCV from source
+- Building from source requires matching CUDA versions between system and PyTorch
+- SSL certificate issues with download.openmmlab.com prevented accessing prebuilt wheels
+
+### Solution Applied
+```bash
+# Use pip directly with the prebuilt wheel URL
+pip install mmcv==2.0.1 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.0.0/index.html --trusted-host download.openmmlab.com
+```
+
+### Why This Solution Worked
+- Directly accessed the prebuilt wheel for CUDA 11.8 and PyTorch 2.0
+- `--trusted-host` bypassed SSL certificate verification issues
+- Prebuilt wheel avoided the need to compile from source
+- Downloaded correct wheel: `mmcv-2.0.1-cp310-cp310-manylinux1_x86_64.whl`
+
+### Prevention for Future Setups
+1. Always use prebuilt wheels when CUDA versions don't match
+2. Check PyTorch CUDA version: `python -c "import torch; print(torch.version.cuda)"`
+3. Use the correct wheel index URL for your PyTorch/CUDA combination
+4. For CUDA 11.8 + PyTorch 2.0: `https://download.openmmlab.com/mmcv/dist/cu118/torch2.0.0/index.html`
+
+## Error 3: Virtual Environment Path Issue (Non-Critical)
 
 ### When It Occurred
 Step 10: When running the download_weights_with_venv.sh script
@@ -87,12 +127,15 @@ source ../.venv/bin/activate && bash download_weights_with_venv.sh
 | 1-3 | Create & activate venv | ✅ Success | No |
 | 4 | Install PyTorch | ✅ Success (numpy 2.1.2) | No |
 | 5 | Install requirements.txt | ✅ Success (numpy 1.23.5) | No |
-| 6 | Install openmim with -U | ⚠️ Upgraded numpy to 2.2.6 | Hidden |
-| 7 | Test imports | ❌ Failed | **ERROR 1** |
-| 8 | Fix numpy version | ✅ Fixed (numpy 1.23.5) | No |
-| 9 | Verify imports | ✅ Success | No |
-| 10 | Download weights | ⚠️ Path error but succeeded | **ERROR 2** |
-| 11 | Test inference | ✅ Success | No |
+| 6a | Install openmim | ✅ Success (without -U flag) | No |
+| 6b | Install mmengine with mim | ✅ Success | No |
+| 6c | Install mmcv with mim | ❌ CUDA mismatch error | **ERROR 2** |
+| 6d | Install mmcv with pip + wheel URL | ✅ Fixed | No |
+| 6e | Install mmdet & mmpose | ✅ Success | No |
+| 7 | Check NumPy version | ✅ Still 1.23.5 | No |
+| 8 | Verify imports | ✅ Success | No |
+| 9 | Download weights | ⚠️ Path error but succeeded | **ERROR 3** |
+| 10 | Test inference | ✅ Success | No |
 
 ## Key Learnings
 
@@ -121,6 +164,9 @@ source ../.venv/bin/activate && bash download_weights_with_venv.sh
 1. **Check NumPy compatibility first** when encountering import errors with vision packages
 2. **Use `--force-reinstall`** when downgrading packages to ensure proper replacement
 3. **Verify CUDA availability** after PyTorch installation to ensure GPU support
-4. **Test imports incrementally** after installing each major package group
-5. **Always activate venv before running scripts** that expect venv activation
-6. **Read error messages carefully** - sometimes non-critical errors don't stop execution
+4. **Check CUDA version compatibility** between system and PyTorch before building packages from source
+5. **Use prebuilt wheels** for MMLab packages when possible to avoid compilation issues
+6. **Test imports incrementally** after installing each major package group
+7. **Always activate venv before running scripts** that expect venv activation
+8. **Read error messages carefully** - sometimes non-critical errors don't stop execution
+9. **Use `--trusted-host` flag** when SSL certificate errors occur with package repositories

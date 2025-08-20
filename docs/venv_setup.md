@@ -41,37 +41,88 @@ uv pip install -r requirements.txt
 # Also installed all other dependencies like diffusers, transformers, etc.
 ```
 
-### Step 6: Install MMLab Packages (This caused NumPy upgrade issue)
+### Step 6: Install MMLab Packages (Careful with versions!)
 ```bash
-# Install openmim first
-uv pip install --no-cache-dir -U openmim
-# WARNING: This upgraded numpy from 1.23.5 to 2.2.6!
+# Install openmim first (WITHOUT -U flag to avoid numpy upgrade)
+uv pip install openmim
 
-# Install MMLab components using mim
+# Install MMLab components
 mim install mmengine
-mim install "mmcv==2.0.1"
+
+# Install MMCV - May fail with CUDA mismatch error if building from source
+# If mim install fails, use pip with prebuilt wheel instead:
+pip install mmcv==2.0.1 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.0.0/index.html --trusted-host download.openmmlab.com
+
+# Install detection and pose packages
 mim install "mmdet==3.1.0"
 mim install "mmpose==1.1.0"
 ```
 
-### Step 7: First Import Test (FAILED)
+### Step 7: Check NumPy Version (Important!)
 ```bash
-python -c "import torch; import torchvision; import mmcv"
-# ERROR: NumPy version incompatibility error occurred here
+python -c "import numpy; print(f'NumPy version: {numpy.__version__}')"
+# Should output: NumPy version: 1.23.5
+# If it shows 2.x, downgrade with: uv pip install "numpy==1.23.5" --force-reinstall
 ```
 
-### Step 8: Fix NumPy Version Compatibility (CRITICAL FIX)
+### Step 8: Comprehensive Verification
 ```bash
-# Force downgrade numpy back to compatible version
-uv pip install "numpy==1.23.5" --force-reinstall
-# This resolved the compatibility issue
+# Test all ML packages
+python -c "
+import torch
+import torchvision
+import mmcv
+import mmdet
+import mmpose
+
+print('✓ PyTorch version:', torch.__version__)
+print('✓ CUDA available:', torch.cuda.is_available())
+print('✓ MMCV version:', mmcv.__version__)
+print('✓ MMDetection version:', mmdet.__version__)
+print('✓ MMPose version:', mmpose.__version__)
+print('✓ All imports successful!')
+"
+
+# Expected output:
+# ✓ PyTorch version: 2.0.1+cu118
+# ✓ CUDA available: True
+# ✓ MMCV version: 2.0.1
+# ✓ MMDetection version: 3.1.0
+# ✓ MMPose version: 1.1.0
+# ✓ All imports successful!
 ```
 
-### Step 9: Verify Installation
+### Step 9: Verify MuseTalk Dependencies
 ```bash
-python -c "import torch; import torchvision; import mmcv; import mmdet; import mmpose; print('PyTorch version:', torch.__version__); print('CUDA available:', torch.cuda.is_available())"
-# Output: PyTorch version: 2.0.1+cu118
-# Output: CUDA available: True
+# Test MuseTalk-specific packages
+python -c "
+import cv2
+import tensorflow as tf
+import jax
+import diffusers
+import transformers
+import gradio
+import librosa
+
+print('✓ OpenCV version:', cv2.__version__)
+print('✓ TensorFlow version:', tf.__version__)
+print('✓ JAX version:', jax.__version__)
+print('✓ Diffusers version:', diffusers.__version__)
+print('✓ Transformers version:', transformers.__version__)
+print('✓ Gradio version:', gradio.__version__)
+print('✓ Librosa version:', librosa.__version__)
+print('✓ All MuseTalk dependencies verified!')
+"
+
+# Expected output:
+# ✓ OpenCV version: 4.9.0
+# ✓ TensorFlow version: 2.12.0
+# ✓ JAX version: 0.4.30
+# ✓ Diffusers version: 0.30.2
+# ✓ Transformers version: 4.39.2
+# ✓ Gradio version: 5.24.0
+# ✓ Librosa version: 0.11.0
+# ✓ All MuseTalk dependencies verified!
 ```
 
 ### Step 10: Download Model Weights
@@ -160,6 +211,27 @@ Should show directories:
 ✅ FFmpeg installed
 ✅ All model weights downloaded
 ✅ All dependencies installed via uv
+
+## Common Issues and Solutions
+
+### CUDA Version Mismatch Error
+If you see `The detected CUDA version (X.X) mismatches the version that was used to compile PyTorch (11.8)`:
+```bash
+# Use prebuilt wheel instead of building from source
+pip install mmcv==2.0.1 -f https://download.openmmlab.com/mmcv/dist/cu118/torch2.0.0/index.html --trusted-host download.openmmlab.com
+```
+
+### NumPy Version Conflict
+If imports fail with NumPy compatibility errors:
+```bash
+# Force reinstall NumPy 1.23.5
+uv pip install "numpy==1.23.5" --force-reinstall
+```
+
+### SSL Certificate Errors
+If you encounter SSL certificate verification errors:
+- Add `--trusted-host download.openmmlab.com` to pip commands
+- Or use system certificates: `export REQUESTS_CA_BUNDLE=/etc/ssl/certs/ca-certificates.crt`
 
 ## Next Steps
 The environment is ready for running MuseTalk inference. Use the inference scripts:
