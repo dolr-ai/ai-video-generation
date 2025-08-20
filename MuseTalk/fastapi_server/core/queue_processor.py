@@ -53,6 +53,9 @@ class QueueProcessor:
         """Main queue processing loop"""
         queue_logger.info("Queue processor loop started")
         
+        # Ensure async objects are initialized
+        task_manager._ensure_async_objects()
+        
         while self.running:
             try:
                 # Wait for task in queue

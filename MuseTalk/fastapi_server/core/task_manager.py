@@ -42,12 +42,19 @@ class Task:
 class TaskManager:
     def __init__(self):
         self.tasks: Dict[str, Task] = {}
-        self.task_queue: asyncio.Queue = asyncio.Queue()
-        self.processing_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_MODEL_REQUESTS)
+        self.task_queue: Optional[asyncio.Queue] = None
+        self.processing_semaphore: Optional[asyncio.Semaphore] = None
         self.tasks_file = os.path.join(settings.STORAGE_DIR, 'tasks.json')
         self._load_tasks()
         # Start the queue processor
         self._queue_processor_task = None
+        
+    def _ensure_async_objects(self):
+        """Initialize async objects when event loop is available"""
+        if self.task_queue is None:
+            self.task_queue = asyncio.Queue()
+        if self.processing_semaphore is None:
+            self.processing_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_MODEL_REQUESTS)
         
     def _load_tasks(self):
         """Load tasks from persistent storage"""
@@ -132,6 +139,9 @@ class TaskManager:
             logger.error(f"Cannot queue task {task_id}: task not found")
             return
         
+        # Ensure async objects are initialized
+        self._ensure_async_objects()
+        
         # Update status to queued
         self.update_task_status(task_id, TaskStatus.QUEUED)
         
@@ -141,6 +151,8 @@ class TaskManager:
     
     def get_queue_size(self) -> int:
         """Get current queue size"""
+        if self.task_queue is None:
+            return 0
         return self.task_queue.qsize()
     
     def get_queued_tasks(self) -> List[str]:
