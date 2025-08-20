@@ -91,6 +91,7 @@ curl -X POST http://localhost:8000/api/v1/generate \
   -d '{
     "image": "/workspace/ai-video-generation/multimedia/image/test_image1-female.png",
     "audio": "/workspace/ai-video-generation/multimedia/audio/test_audio1-female.mp3",
+    "user_id": "user123",
     "bbox_shift": 0,
     "fps": 25,
     "batch_size": 4
@@ -116,19 +117,52 @@ Generate a talking head video.
 ```json
 {
   "image": "/path/to/image.jpg or http://url.to/image.jpg",
-  "audio": "/path/to/audio.mp3 or http://url.to/audio.mp3", 
+  "audio": "/path/to/audio.mp3 or http://url.to/audio.mp3",
+  "user_id": "unique_user_identifier",
   "bbox_shift": 0,
   "fps": 25,
   "batch_size": 8
 }
 ```
 
-**Response:**
+**Parameter Details:**
+- `image`: Local file path or URL to an image file (PNG, JPG, JPEG, GIF, BMP)
+- `audio`: Local file path or URL to an audio file (WAV, MP3, AAC, M4A, OGG)
+- `user_id`: **Required** - Unique identifier for the user making the request
+- `bbox_shift`: Face bounding box shift value (default: 0)
+- `fps`: Video frames per second (default: 25)
+- `batch_size`: Processing batch size (default: 8)
+
+**Important Notes:**
+- ❌ **Video URLs are NOT supported** - The API will reject requests with video file URLs
+- ✅ **URL downloads** - Image and audio files will be automatically downloaded from URLs
+- ✅ **Local files** - Direct paths to files on the server are supported
+- 📁 **Temp storage** - Downloaded files are stored temporarily per task
+
+**Success Response:**
 ```json
 {
   "status": "accepted",
   "task_id": "c1b7134f-3798-4dce-8b0c-8505eb7c039f",
   "message": "Video generation started. Use /status/{task_id} to check progress."
+}
+```
+
+**Error Responses:**
+```json
+// Video URL provided (HTTP 400)
+{
+  "detail": "Invalid request: video not supported for image input. Please provide image URL or local path."
+}
+
+// Video URL provided for audio (HTTP 400)  
+{
+  "detail": "Invalid request: video not supported for audio input. Please provide audio URL or local path."
+}
+
+// File not found (HTTP 404)
+{
+  "detail": "Image file not found: /path/to/missing/file.jpg"
 }
 ```
 
@@ -296,6 +330,24 @@ curl -X POST ... -d '{"batch_size": 2, ...}'
 
 # Check detailed logs
 tail -f musetalk_model.log
+```
+
+**6. Video URL Rejected**
+```bash
+# Error: "video not supported for image input"
+# Solution: Use image URL instead
+curl -X POST ... -d '{
+  "image": "https://example.com/photo.jpg",  # ✅ Use image URL
+  "audio": "https://example.com/audio.mp3", # ✅ Use audio URL
+  "user_id": "user123"
+}'
+
+# ❌ This will be rejected:
+curl -X POST ... -d '{
+  "image": "https://example.com/video.mp4",  # ❌ Video URL not allowed
+  "audio": "https://example.com/speech.wav",
+  "user_id": "user123" 
+}'
 ```
 
 ### Architecture-Specific Fixes

@@ -83,6 +83,7 @@ curl -X POST ${BASE_URL}/api/v1/generate \
   -d "{
     \"image\": \"$IMAGE_PATH\",
     \"audio\": \"$AUDIO_PATH\",
+    \"user_id\": \"test_user_123\",
     \"bbox_shift\": 0,
     \"fps\": 25,
     \"batch_size\": 4
@@ -99,6 +100,7 @@ curl -X POST ${BASE_URL}/api/v1/generate \
   -d '{
     "image": "https://example.com/path/to/image.jpg",
     "audio": "https://example.com/path/to/audio.mp3",
+    "user_id": "test_user_123",
     "bbox_shift": 0,
     "fps": 25,
     "batch_size": 4
@@ -196,6 +198,7 @@ GENERATE_RESPONSE=$(curl -s -X POST ${BASE_URL}/api/v1/generate \
   -d "{
     \"image\": \"$IMAGE_PATH\",
     \"audio\": \"$AUDIO_PATH\",
+    \"user_id\": \"test_user_123\",
     \"bbox_shift\": 0,
     \"fps\": 25,
     \"batch_size\": 4
@@ -239,6 +242,7 @@ curl -X POST ${BASE_URL}/api/v1/generate \
   -d '{
     "image": "https://raw.githubusercontent.com/username/repo/main/sample_image.jpg",
     "audio": "https://raw.githubusercontent.com/username/repo/main/sample_audio.mp3",
+    "user_id": "test_user_123",
     "bbox_shift": 0,
     "fps": 25,
     "batch_size": 4
@@ -253,14 +257,21 @@ curl -X POST ${BASE_URL}/api/v1/generate \
 |-----------|------|-------------|---------|
 | `image` | string | Image file path (after upload) or URL | Required |
 | `audio` | string | Audio file path (after upload) or URL | Required |
+| `user_id` | string | **Required** - Unique identifier for the user | Required |
 | `bbox_shift` | int | Bounding box shift | 0 |
 | `fps` | int | Frames per second (15-30) | 25 |
 | `batch_size` | int | Processing batch size (2-8) | 4 |
 
 ### Supported File Formats
 
-- **Images**: JPG, JPEG, PNG
-- **Audio**: MP3, WAV
+- **Images**: JPG, JPEG, PNG, GIF, BMP
+- **Audio**: MP3, WAV, AAC, M4A, OGG
+
+### Important Notes
+
+- **Video URLs are NOT supported** - The API will reject requests with video file URLs for both image and audio inputs
+- **User ID is required** - Every request must include a unique `user_id` parameter for tracking purposes
+- **URL downloads** - Image and audio files are automatically downloaded from URLs to temporary storage
 
 ## Notes
 
@@ -282,6 +293,22 @@ curl -X POST ${BASE_URL}/api/v1/generate \
 3. **Task taking too long**: Video generation can take several minutes. Keep polling the status endpoint.
 
 4. **Upload fails**: Ensure your file is in a supported format and under the size limit (500MB).
+
+5. **"video not supported" error**: You provided a video URL for image or audio input. Use image/audio URLs only.
+   ```json
+   {
+     "detail": "Invalid request: video not supported for image input. Please provide image URL or local path."
+   }
+   ```
+
+6. **Missing user_id**: The `user_id` parameter is required for all generation requests.
+   ```bash
+   # ❌ This will fail:
+   curl -X POST ${BASE_URL}/api/v1/generate -d '{"image": "...", "audio": "..."}'
+   
+   # ✅ This will work:
+   curl -X POST ${BASE_URL}/api/v1/generate -d '{"image": "...", "audio": "...", "user_id": "your_id"}'
+   ```
 
 ## Contact
 

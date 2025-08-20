@@ -23,6 +23,7 @@ class Task:
     status: TaskStatus
     image_path: str
     audio_path: str
+    user_id: str
     output_path: Optional[str] = None
     created_at: str = None
     started_at: Optional[str] = None
@@ -65,7 +66,7 @@ class TaskManager:
         except Exception as e:
             logger.error(f"Error saving tasks: {str(e)}")
     
-    def create_task(self, task_id: str, image_path: str, audio_path: str, 
+    def create_task(self, task_id: str, image_path: str, audio_path: str, user_id: str,
                    bbox_shift: int = 0, fps: int = 25, batch_size: int = 8) -> Task:
         """Create a new task"""
         task = Task(
@@ -73,6 +74,7 @@ class TaskManager:
             status=TaskStatus.PENDING,
             image_path=image_path,
             audio_path=audio_path,
+            user_id=user_id,
             bbox_shift=bbox_shift,
             fps=fps,
             batch_size=batch_size

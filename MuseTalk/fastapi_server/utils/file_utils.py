@@ -30,8 +30,30 @@ def is_allowed_file(filename: str, file_type: str) -> bool:
         return extension in settings.ALLOWED_IMAGE_EXTENSIONS
     elif file_type == 'audio':
         return extension in settings.ALLOWED_AUDIO_EXTENSIONS
+    elif file_type == 'video':
+        return extension in settings.ALLOWED_VIDEO_EXTENSIONS
     
     return False
+
+def detect_file_type_from_url(url: str) -> Optional[str]:
+    """Detect file type from URL based on extension"""
+    try:
+        parsed_url = urlparse(url)
+        filename = os.path.basename(parsed_url.path)
+        
+        if not filename:
+            return None
+            
+        if is_allowed_file(filename, 'image'):
+            return 'image'
+        elif is_allowed_file(filename, 'audio'):
+            return 'audio'
+        elif is_allowed_file(filename, 'video'):
+            return 'video'
+        
+        return None
+    except:
+        return None
 
 def download_file(url: str, dest_dir: str, file_type: str) -> str:
     """Download file from URL to destination directory"""

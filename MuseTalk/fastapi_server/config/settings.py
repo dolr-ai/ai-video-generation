@@ -32,6 +32,7 @@ class Settings:
     MAX_FILE_SIZE: int = 500 * 1024 * 1024  # 500MB
     ALLOWED_IMAGE_EXTENSIONS: List[str] = ['png', 'jpg', 'jpeg', 'gif', 'bmp']
     ALLOWED_AUDIO_EXTENSIONS: List[str] = ['wav', 'mp3', 'aac', 'm4a', 'ogg']
+    ALLOWED_VIDEO_EXTENSIONS: List[str] = ['mp4', 'avi', 'mov', 'mkv', 'webm', 'flv']
     
     # Model settings
     DEFAULT_FPS: int = 25
