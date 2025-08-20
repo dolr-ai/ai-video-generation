@@ -4,7 +4,7 @@ import logging
 import os
 from datetime import datetime
 from enum import Enum
-from typing import Dict, Optional
+from typing import Dict, Optional, List
 from dataclasses import dataclass, asdict
 
 from config.settings import settings
@@ -13,6 +13,7 @@ logger = logging.getLogger(__name__)
 
 class TaskStatus(str, Enum):
     PENDING = "pending"
+    QUEUED = "queued"
     PROCESSING = "processing"
     COMPLETED = "completed"
     FAILED = "failed"
@@ -32,6 +33,7 @@ class Task:
     bbox_shift: int = 0
     fps: int = 25
     batch_size: int = 8
+    queue_position: Optional[int] = None
     
     def __post_init__(self):
         if self.created_at is None:
@@ -40,8 +42,12 @@ class Task:
 class TaskManager:
     def __init__(self):
         self.tasks: Dict[str, Task] = {}
+        self.task_queue: asyncio.Queue = asyncio.Queue()
+        self.processing_semaphore = asyncio.Semaphore(settings.MAX_CONCURRENT_MODEL_REQUESTS)
         self.tasks_file = os.path.join(settings.STORAGE_DIR, 'tasks.json')
         self._load_tasks()
+        # Start the queue processor
+        self._queue_processor_task = None
         
     def _load_tasks(self):
         """Load tasks from persistent storage"""
@@ -119,6 +125,40 @@ class TaskManager:
     def get_all_tasks(self) -> Dict[str, Task]:
         """Get all tasks"""
         return self.tasks.copy()
+    
+    def add_task_to_queue(self, task_id: str):
+        """Add task to processing queue"""
+        if task_id not in self.tasks:
+            logger.error(f"Cannot queue task {task_id}: task not found")
+            return
+        
+        # Update status to queued
+        self.update_task_status(task_id, TaskStatus.QUEUED)
+        
+        # Add to queue
+        self.task_queue.put_nowait(task_id)
+        logger.info(f"Added task {task_id} to queue. Queue size: {self.task_queue.qsize()}")
+    
+    def get_queue_size(self) -> int:
+        """Get current queue size"""
+        return self.task_queue.qsize()
+    
+    def get_queued_tasks(self) -> List[str]:
+        """Get list of queued task IDs"""
+        queued_tasks = []
+        for task_id, task in self.tasks.items():
+            if task.status == TaskStatus.QUEUED:
+                queued_tasks.append(task_id)
+        return queued_tasks
+    
+    def update_queue_positions(self):
+        """Update queue positions for queued tasks"""
+        queued_tasks = self.get_queued_tasks()
+        for position, task_id in enumerate(queued_tasks):
+            task = self.tasks.get(task_id)
+            if task:
+                task.queue_position = position + 1
+        self._save_tasks()
     
     def cleanup_old_tasks(self, days: int = 7):
         """Remove tasks older than specified days"""

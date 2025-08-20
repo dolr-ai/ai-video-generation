@@ -48,6 +48,9 @@ class Settings:
     MODEL_SERVER_TIMEOUT: int = 300  # 5 minutes
     GENERATION_TIMEOUT: int = 600    # 10 minutes
     
+    # Queue settings
+    MAX_CONCURRENT_MODEL_REQUESTS: int = 1  # Only 1 request to model server at a time
+    
     @classmethod
     def init_dirs(cls):
         """Create necessary directories if they don't exist"""

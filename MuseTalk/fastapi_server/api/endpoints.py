@@ -1,7 +1,7 @@
 import os
 import logging
 import httpx
-from fastapi import APIRouter, HTTPException, File, UploadFile, BackgroundTasks
+from fastapi import APIRouter, HTTPException, File, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 from typing import Optional
@@ -64,6 +64,7 @@ class TaskStatusResponse(BaseModel):
     completed_at: Optional[str] = None
     output_path: Optional[str] = None
     error_message: Optional[str] = None
+    queue_position: Optional[int] = None
 
 
 class UploadResponse(BaseModel):
@@ -72,100 +73,11 @@ class UploadResponse(BaseModel):
     filename: str
 
 
-async def process_generation_task(
-    task_id: str,
-    image_path: str,
-    audio_path: str,
-    bbox_shift: int = -5,
-    fps: int = 30,
-    batch_size: int = 8,
-):
-    """Background task to process video generation"""
-    try:
-        endpoint_logger.info(f"🔄 Starting background processing for task {task_id}")
-        endpoint_logger.info(f"  Image: {image_path}")
-        endpoint_logger.info(f"  Audio: {audio_path}")
-
-        # Update status to processing
-        task_manager.update_task_status(task_id, TaskStatus.PROCESSING)
-
-        # Prepare output path
-        output_filename = f"generated_{task_id}.mp4"
-        temp_output_path = os.path.join(create_task_directory(task_id), output_filename)
-
-        # Call model server
-        endpoint_logger.info(f"🌐 Calling model server for task {task_id}")
-        async with httpx.AsyncClient(timeout=settings.MODEL_SERVER_TIMEOUT) as client:
-            model_server_url = (
-                f"http://{settings.MODEL_SERVER_HOST}:{settings.MODEL_SERVER_PORT}"
-            )
-            endpoint_logger.info(f"Model server URL: {model_server_url}")
-
-            generation_request = {
-                "task_id": task_id,
-                "image_path": image_path,
-                "audio_path": audio_path,
-                "output_path": temp_output_path,
-                "bbox_shift": bbox_shift,
-                "fps": fps,
-                "batch_size": batch_size,
-            }
-
-            response = await client.post(
-                f"{model_server_url}/generate",
-                json=generation_request,
-                timeout=settings.GENERATION_TIMEOUT,
-            )
-
-            if response.status_code == 200:
-                result = response.json()
-                if result["status"] == "success":
-                    # Save video to permanent storage
-                    final_video_path = save_video_file(
-                        task_id, temp_output_path, output_filename
-                    )
-
-                    # Update task status
-                    task_manager.update_task_status(
-                        task_id, TaskStatus.COMPLETED, output_path=final_video_path
-                    )
-
-                    endpoint_logger.info(
-                        f"✅ Task {task_id} completed successfully - Video saved to: {final_video_path}"
-                    )
-                else:
-                    # Generation failed
-                    task_manager.update_task_status(
-                        task_id,
-                        TaskStatus.FAILED,
-                        error_message=result.get("message", "Unknown error"),
-                    )
-                    endpoint_logger.error(
-                        f"❌ Task {task_id} generation failed: {result.get('message')}"
-                    )
-            else:
-                # HTTP error
-                error_msg = f"Model server error: {response.status_code}"
-                task_manager.update_task_status(
-                    task_id, TaskStatus.FAILED, error_message=error_msg
-                )
-                endpoint_logger.error(f"❌ Task {task_id} HTTP error: {error_msg}")
-
-    except Exception as e:
-        import traceback
-
-        error_msg = f"Error processing task: {str(e)}"
-        task_manager.update_task_status(
-            task_id, TaskStatus.FAILED, error_message=error_msg
-        )
-        endpoint_logger.error(f"❌ Task {task_id} exception: {error_msg}")
-        endpoint_logger.error(f"Full traceback:\n{traceback.format_exc()}")
+# Queue processing is now handled by queue_processor.py
 
 
 @router.post("/generate", response_model=GenerateVideoResponse)
-async def generate_video(
-    request: GenerateVideoRequest, background_tasks: BackgroundTasks
-):
+async def generate_video(request: GenerateVideoRequest):
     """Generate talking head video"""
     try:
         # Generate unique task ID
@@ -246,21 +158,22 @@ async def generate_video(
             batch_size=request.batch_size,
         )
 
-        # Start background processing
-        background_tasks.add_task(
-            process_generation_task,
-            task_id=task_id,
-            image_path=image_path,
-            audio_path=audio_path,
-            bbox_shift=request.bbox_shift,
-            fps=request.fps,
-            batch_size=request.batch_size,
-        )
+        # Add task to queue for processing
+        task_manager.add_task_to_queue(task_id)
 
+        # Update queue positions
+        task_manager.update_queue_positions()
+        
+        # Get queue position for response
+        task = task_manager.get_task(task_id)
+        queue_position = task.queue_position if task else None
+        
+        queue_message = f"Video generation queued (position {queue_position}). Use /status/{{task_id}} to check progress."
+        
         response = GenerateVideoResponse(
-            status="accepted",
+            status="queued",
             task_id=task_id,
-            message="Video generation started. Use /status/{task_id} to check progress.",
+            message=queue_message,
         )
 
         endpoint_logger.info(f"✅ Task {task_id} accepted and queued for processing")
@@ -288,6 +201,7 @@ async def get_task_status(task_id: str):
         completed_at=task.completed_at,
         output_path=task.output_path,
         error_message=task.error_message,
+        queue_position=task.queue_position,
     )
 
 
@@ -359,4 +273,5 @@ async def health_check():
         "service": "MuseTalk Handler Server",
         "model_server": model_health,
         "tasks_count": len(task_manager.get_all_tasks()),
+        "queue_size": task_manager.get_queue_size(),
     }

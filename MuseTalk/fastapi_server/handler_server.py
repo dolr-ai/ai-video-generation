@@ -6,6 +6,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from api.endpoints import router as api_router
 from config.settings import settings
+from core.queue_processor import queue_processor
 
 # Setup comprehensive logging for handler server
 logging.basicConfig(
@@ -53,10 +54,22 @@ async def startup_event():
     logger.info("🚀 Starting MuseTalk Handler Server...")
     logger.info(f"Server will run on {settings.HANDLER_SERVER_HOST}:{settings.HANDLER_SERVER_PORT}")
     logger.info(f"Model server endpoint: http://{settings.MODEL_SERVER_HOST}:{settings.MODEL_SERVER_PORT}")
+    logger.info(f"Max concurrent model requests: {settings.MAX_CONCURRENT_MODEL_REQUESTS}")
     logger.info(f"FastAPI server directory: {settings.FASTAPI_SERVER_DIR}")
     logger.info(f"Storage directory: {settings.STORAGE_DIR}")
     logger.info("=" * 50)
     settings.init_dirs()
+    
+    # Start queue processor
+    await queue_processor.start()
+    logger.info("✅ Queue processor started")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """Cleanup on shutdown"""
+    logger.info("🛑 Shutting down MuseTalk Handler Server...")
+    await queue_processor.stop()
+    logger.info("✅ Queue processor stopped")
 
 @app.get("/")
 async def root():

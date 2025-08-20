@@ -13,6 +13,7 @@ This implementation uses a **two-server design** for better scalability and reso
 
 - **Scalability**: Multiple handler instances can share a single model server
 - **Resource Management**: Efficient GPU memory usage with single model instance
+- **Queue Management**: Built-in task queuing prevents GPU memory conflicts
 - **Separation of Concerns**: API handling separate from computation
 - **Background Processing**: Long-running tasks don't block API responses
 - **Better Monitoring**: Separate logging and health checks for each component
@@ -21,6 +22,7 @@ This implementation uses a **two-server design** for better scalability and reso
 
 - ✅ **Production-Ready**: Robust error handling, logging, and monitoring
 - ✅ **Scalable Architecture**: Two-server design for better resource utilization  
+- ✅ **Queue Management**: Configurable concurrent request limiting (default: 1)
 - ✅ **Async Task Processing**: Background video generation with status tracking
 - ✅ **Multiple Input Methods**: Support for local files and URLs
 - ✅ **File Upload/Download**: Complete file management with validation
@@ -142,9 +144,9 @@ Generate a talking head video.
 **Success Response:**
 ```json
 {
-  "status": "accepted",
+  "status": "queued",
   "task_id": "c1b7134f-3798-4dce-8b0c-8505eb7c039f",
-  "message": "Video generation started. Use /status/{task_id} to check progress."
+  "message": "Video generation queued (position 1). Use /status/{task_id} to check progress."
 }
 ```
 
@@ -178,15 +180,20 @@ Check task status.
   "started_at": "2025-08-10T18:09:59.232820",
   "completed_at": "2025-08-10T18:11:01.249045",
   "output_path": "/workspace/ai-video-generation/MuseTalk/fastapi_server/storage/videos/c1b7134f-3798-4dce-8b0c-8505eb7c039f/generated_c1b7134f-3798-4dce-8b0c-8505eb7c039f.mp4",
-  "error_message": null
+  "error_message": null,
+  "queue_position": null
 }
 ```
 
 **Status Values:**
 - `pending`: Task created but not started
-- `processing`: Video generation in progress
+- `queued`: Task is waiting in queue for processing
+- `processing`: Video generation in progress  
 - `completed`: Video generation successful
 - `failed`: Error occurred during processing
+
+**Queue Management:**
+- `queue_position`: Shows position in queue (1 = next to process, null when not queued)
 
 ### GET /api/v1/video/{task_id}
 Download generated video.
@@ -253,7 +260,30 @@ class Settings:
     # Timeouts
     MODEL_SERVER_TIMEOUT: int = 300  # 5 minutes
     GENERATION_TIMEOUT: int = 600    # 10 minutes
+    
+    # Queue settings
+    MAX_CONCURRENT_MODEL_REQUESTS: int = 1  # Only 1 request to model server at a time
 ```
+
+### ⚙️ Queue Configuration
+
+The system includes intelligent queue management to prevent GPU memory conflicts:
+
+**Default Configuration:**
+- **`MAX_CONCURRENT_MODEL_REQUESTS = 1`** - Only one request processes at a time
+- **Queue Status**: Tasks show their position in queue
+- **Sequential Processing**: Prevents GPU memory overload
+
+**To modify concurrency** (only if you have multiple GPUs or sufficient memory):
+```python
+# In config/settings.py
+MAX_CONCURRENT_MODEL_REQUESTS: int = 2  # Allow 2 concurrent requests
+```
+
+**Queue Behavior:**
+1. Request submitted → Status: `queued` (with position)
+2. Processing starts → Status: `processing` 
+3. Video generated → Status: `completed`
 
 ## 📊 Monitoring & Logging
 
@@ -263,6 +293,7 @@ The system provides comprehensive logging across multiple files:
 - **`handler_server.log`**: Handler server requests and responses
 - **`endpoints.log`**: API endpoint activity and debugging
 - **`musetalk_model.log`**: Detailed MuseTalk model processing
+- **`queue_processor.log`**: Queue management and task processing
 
 **Log Locations:**
 ```bash
@@ -271,6 +302,7 @@ tail -f /workspace/ai-video-generation/MuseTalk/fastapi_server/model_server.log
 tail -f /workspace/ai-video-generation/MuseTalk/fastapi_server/handler_server.log
 tail -f /workspace/ai-video-generation/MuseTalk/fastapi_server/endpoints.log
 tail -f /workspace/ai-video-generation/MuseTalk/fastapi_server/musetalk_model.log
+tail -f /workspace/ai-video-generation/MuseTalk/fastapi_server/queue_processor.log
 ```
 
 ## 🔧 Troubleshooting

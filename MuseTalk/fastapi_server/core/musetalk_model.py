@@ -265,8 +265,8 @@ class MuseTalkModel:
             # Create output video (exactly like Flask service)
             model_logger.info("Creating output video...")
             
-            # Use ffmpeg to create video
-            cmd_video = f"ffmpeg -y -framerate {fps} -i {result_img_save_path}/%08d.png -c:v libx264 -pix_fmt yuv420p -preset superfast {output_path_str}.tmp.mp4 -loglevel error"
+            # Use ffmpeg to create video with even dimensions filter
+            cmd_video = f"ffmpeg -y -framerate {fps} -i {result_img_save_path}/%08d.png -vf 'pad=ceil(iw/2)*2:ceil(ih/2)*2' -c:v libx264 -pix_fmt yuv420p -preset superfast {output_path_str}.tmp.mp4 -loglevel error"
             subprocess.run(cmd_video, shell=True, check=True)
             
             # Add audio
