@@ -101,8 +101,28 @@ jobs:
         
         # Ensure machine is running
         echo "Ensuring machine is running..."
+        
+        # First, check current machine status
+        echo "Current machine status:"
+        flyctl machines list --app $APP_NAME
+        
+        # Start the machine if it's stopped
+        echo "Starting machine if stopped..."
+        flyctl machines start --app $APP_NAME || true
+        
+        # Scale to ensure at least 1 machine
         flyctl scale count 1 --app $APP_NAME
-        sleep 300  # Wait 5 minutes for machine to fully start
+        
+        # Wait for machine to be ready
+        echo "Waiting for machine to start (max 10 minutes)..."
+        for i in {1..20}; do
+          if flyctl ssh console --app $APP_NAME -C "echo 'Machine is ready'" 2>/dev/null; then
+            echo "Machine is ready!"
+            break
+          fi
+          echo "Attempt $i/20: Machine not ready yet, waiting 30s..."
+          sleep 30
+        done
         
         # Check machine status
         flyctl machines list --app $APP_NAME

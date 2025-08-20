@@ -279,6 +279,9 @@ class MuseTalkModel:
             
             model_logger.info(f"Video saved to: {output_path_str}")
             
+            # Clean up VRAM after successful generation
+            self._cleanup_vram()
+            
             return {
                 'status': 'success',
                 'output_path': output_path_str,
@@ -289,16 +292,69 @@ class MuseTalkModel:
             model_logger.error(f"Error generating talking head: {str(e)}")
             import traceback
             model_logger.error(f"Full traceback:\n{traceback.format_exc()}")
+            
+            # Clean up VRAM even on failure
+            self._cleanup_vram()
+            
             return {
                 'status': 'error',
                 'message': str(e)
             }
     
+    def _cleanup_vram(self):
+        """Clean up GPU memory after processing"""
+        try:
+            if torch.cuda.is_available() and self.device and 'cuda' in str(self.device):
+                # Get memory stats before cleanup
+                if hasattr(torch.cuda, 'memory_allocated'):
+                    memory_before = torch.cuda.memory_allocated(self.device) / (1024**3)  # GB
+                    memory_cached_before = torch.cuda.memory_reserved(self.device) / (1024**3)  # GB
+                else:
+                    memory_before = memory_cached_before = 0
+                
+                # Clear cache and collect garbage
+                torch.cuda.empty_cache()
+                import gc
+                gc.collect()
+                
+                # Get memory stats after cleanup
+                if hasattr(torch.cuda, 'memory_allocated'):
+                    memory_after = torch.cuda.memory_allocated(self.device) / (1024**3)  # GB
+                    memory_cached_after = torch.cuda.memory_reserved(self.device) / (1024**3)  # GB
+                    
+                    model_logger.info(f"🧹 VRAM cleanup completed:")
+                    model_logger.info(f"   • Allocated: {memory_before:.2f}GB → {memory_after:.2f}GB (freed {memory_before-memory_after:.2f}GB)")
+                    model_logger.info(f"   • Cached: {memory_cached_before:.2f}GB → {memory_cached_after:.2f}GB (freed {memory_cached_before-memory_cached_after:.2f}GB)")
+                else:
+                    model_logger.info("🧹 VRAM cleanup completed (memory stats unavailable)")
+                    
+        except Exception as e:
+            model_logger.warning(f"VRAM cleanup failed: {str(e)}")
+    
     def health_check(self) -> dict:
         """Check if model is loaded and ready"""
-        return {
+        health_data = {
             'status': 'healthy' if self.models_loaded else 'loading',
             'models_loaded': self.models_loaded,
             'device': str(self.device) if self.device else 'unknown',
             'cuda_available': torch.cuda.is_available()
         }
+        
+        # Add GPU memory info if available
+        if torch.cuda.is_available() and self.device and 'cuda' in str(self.device):
+            try:
+                if hasattr(torch.cuda, 'memory_allocated'):
+                    allocated_gb = torch.cuda.memory_allocated(self.device) / (1024**3)
+                    cached_gb = torch.cuda.memory_reserved(self.device) / (1024**3)
+                    total_gb = torch.cuda.get_device_properties(self.device).total_memory / (1024**3)
+                    
+                    health_data['vram'] = {
+                        'allocated_gb': round(allocated_gb, 2),
+                        'cached_gb': round(cached_gb, 2),
+                        'total_gb': round(total_gb, 2),
+                        'usage_percent': round((allocated_gb / total_gb) * 100, 1)
+                    }
+            except Exception as e:
+                health_data['vram'] = {'error': str(e)}
+        
+        return health_data
