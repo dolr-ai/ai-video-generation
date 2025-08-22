@@ -1,11 +1,15 @@
 boring.sh
 ffmpeg-master-latest-linux64-gpl*
 *.egg-info/
-
+stress-test-data/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
 *$py.class
+*.mp4
+outputs/
+storage/
+setup.sh
 
 # C extensions
 *.so
