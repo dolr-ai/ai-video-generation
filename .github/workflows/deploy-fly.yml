@@ -84,29 +84,29 @@ jobs:
     - name: Deploy to Fly.io
       run: |
         cd MuseTalk
-        
+
         # Create app if doesn't exist
         flyctl apps list | grep -q "$APP_NAME" || flyctl apps create $APP_NAME --org $ORG_NAME
-        
+
         # Create volume if doesn't exist
         flyctl volumes list --app $APP_NAME | grep -q "$VOLUME_NAME" || \
           flyctl volumes create $VOLUME_NAME --size $VOLUME_SIZE --region $REGION --vm-gpu-kind $GPU_TYPE --app $APP_NAME --yes
-        
+
         # Deploy
-        flyctl deploy --config $FLY_TOML_PATH --dockerfile $DOCKERFILE_PATH --app $APP_NAME --primary-region $REGION --ha=false --wait-timeout 1800
+        flyctl deploy --config $FLY_TOML_PATH --dockerfile $DOCKERFILE_PATH --app $APP_NAME --primary-region $REGION --ha=false --wait-timeout 3600
 
     - name: Upload models to volume
       run: |
         cd MuseTalk
-        
+
         # Ensure machine is running
         echo "Ensuring machine is running..."
         flyctl scale count 1 --app $APP_NAME
         sleep 300  # Wait 5 minutes for machine to fully start
-        
+
         # Check machine status
         flyctl machines list --app $APP_NAME
-        
+
         # Upload models to volume
         echo "Checking if models already exist in volume..."
         if flyctl ssh console --app $APP_NAME -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded" 2>/dev/null; then
@@ -115,27 +115,27 @@ jobs:
           echo "Models not found in volume, uploading..."
           echo "Creating models directory if it doesn't exist..."
           flyctl ssh console --app $APP_NAME -C "mkdir -p /workspace/ai-video-generation/MuseTalk/models"
-          
+
           echo "Cleaning up .cache directories before upload..."
           find ./models -type d -name ".cache" -exec rm -rf {} + 2>/dev/null || true
-          
+
           echo "Uploading models (this may take several minutes)..."
           # Use tar with -C flag to change directory instead of using cd
           tar -czf - models | flyctl ssh console --app $APP_NAME -C "tar -xzf - -C /workspace/ai-video-generation/MuseTalk --no-same-owner --no-same-permissions"
-          
+
           # Verify upload was successful
           echo "Verifying model upload..."
           flyctl ssh console --app $APP_NAME -C "ls -la /workspace/ai-video-generation/MuseTalk/models/"
-          
+
           # Create marker file
           flyctl ssh console --app $APP_NAME -C "touch /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"
-          
+
           echo "Model upload completed"
         fi
-        
+
         # Verify models are accessible
         echo "Final verification of models..."
         flyctl ssh console --app $APP_NAME -C "find /workspace/ai-video-generation/MuseTalk/models -type f -name '*.pth' | head -5" || echo "No .pth files found yet"
-        
+
         # Cleanup local models
         rm -rf models/
