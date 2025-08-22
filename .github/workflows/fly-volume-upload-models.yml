@@ -175,7 +175,7 @@ jobs:
           echo "Upload attempt $attempt/3..."
           
           # Use compressed tar with extended timeout (30 minutes)
-          if timeout 1800 tar -czf - models | flyctl ssh console --app $APP_NAME --pty --timeout 1800 -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - --no-same-owner --no-same-permissions && echo 'UPLOAD_SUCCESS'"; then
+          if timeout 1800 tar -czf - models | flyctl ssh console --app $APP_NAME --pty -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - --no-same-owner --no-same-permissions && echo 'UPLOAD_SUCCESS'"; then
             UPLOAD_SUCCESS=true
             echo "✅ Upload successful on attempt $attempt"
             break
