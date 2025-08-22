@@ -101,7 +101,7 @@ jobs:
 
         # Ensure machine is running
         echo "Ensuring machine is running..."
-        flyctl scale count 1 --app $APP_NAME
+        curl -X GET https://${APP_NAME}/api/v1/health
         sleep 300  # Wait 5 minutes for machine to fully start
 
         # Check machine status

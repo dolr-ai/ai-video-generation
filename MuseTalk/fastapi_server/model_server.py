@@ -40,9 +40,9 @@ class GenerateRequest(BaseModel):
     image_path: str
     audio_path: str
     output_path: str
-    bbox_shift: int = 0
-    fps: int = 25
-    batch_size: int = 8
+    bbox_shift: int = settings.DEFAULT_BBOX_SHIFT
+    fps: int = settings.DEFAULT_FPS
+    batch_size: int = settings.DEFAULT_BATCH_SIZE
 
 class GenerateResponse(BaseModel):
     status: str

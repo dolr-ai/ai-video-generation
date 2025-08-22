@@ -6,6 +6,7 @@ import sys
 import subprocess
 import logging
 from typing import Dict
+from config.settings import settings
 
 logger = logging.getLogger(__name__)
 
@@ -16,7 +17,8 @@ class SimpleMuseTalkModel:
         self.flask_service_url = "http://localhost:5000/api/v1"
         
     def generate_talking_head(self, image_path: str, audio_path: str, output_path: str, 
-                            bbox_shift: int = 0, fps: int = 25, batch_size: int = 8) -> Dict:
+                            bbox_shift: int = settings.DEFAULT_BBOX_SHIFT, fps: int = settings.DEFAULT_FPS, 
+                            batch_size: int = settings.DEFAULT_BATCH_SIZE) -> Dict:
         """Generate talking head by calling the working Flask service"""
         try:
             import requests

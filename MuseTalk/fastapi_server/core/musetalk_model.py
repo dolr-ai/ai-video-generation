@@ -5,12 +5,15 @@ import logging
 import subprocess
 import cv2
 import numpy as np
+import threading
+import queue
+import time
 from transformers import WhisperModel
 
 # Import MuseTalk modules directly (they're pip installed)
 # No sys.path manipulation needed
-from musetalk.utils.utils import load_all_model, datagen, get_file_type
-from musetalk.utils.preprocessing import get_landmark_and_bbox, read_imgs, coord_placeholder
+from musetalk.utils.utils import load_all_model, datagen
+from musetalk.utils.preprocessing import get_landmark_and_bbox, coord_placeholder
 from musetalk.utils.blending import get_image
 from musetalk.utils.face_parsing import FaceParsing
 from musetalk.utils.audio_processor import AudioProcessor
@@ -132,8 +135,48 @@ class MuseTalkModel:
             model_logger.error(f"Full traceback:\n{traceback.format_exc()}")
             return False
     
+    def process_frames(self, res_frame_queue, video_len, coord_list_cycle, frame_list_cycle, 
+                      result_img_save_path, parsing_mode):
+        """Process frames in parallel thread for realtime performance"""
+        idx = 0
+        model_logger.info(f"Starting frame processor thread for {video_len} frames")
+        
+        while idx < video_len:
+            try:
+                # Get frame from queue with timeout
+                res_frame = res_frame_queue.get(block=True, timeout=1)
+            except queue.Empty:
+                continue
+            
+            # Get coordinates and original frame
+            bbox = coord_list_cycle[idx % len(coord_list_cycle)]
+            ori_frame = frame_list_cycle[idx % len(frame_list_cycle)]
+            x1, y1, x2, y2 = bbox
+            
+            try:
+                # Resize generated frame to match bbox
+                res_frame = cv2.resize(res_frame.astype(np.uint8), (x2 - x1, y2 - y1))
+            except Exception as e:
+                model_logger.warning(f"Failed to resize frame {idx}: {str(e)}")
+                idx += 1
+                continue
+            
+            # Blend with original frame
+            combine_frame = get_image(ori_frame, res_frame, bbox, mode=parsing_mode, fp=self.face_parser)
+            
+            # Save frame
+            cv2.imwrite(f"{result_img_save_path}/{str(idx).zfill(8)}.png", combine_frame)
+            
+            idx += 1
+            
+            if idx % 10 == 0:
+                model_logger.debug(f"Processed {idx}/{video_len} frames")
+        
+        model_logger.info(f"Frame processor thread completed - processed {idx} frames")
+    
     def generate_talking_head(self, image_path: str, audio_path: str, output_path: str, 
-                            bbox_shift: int = 0, fps: int = 25, batch_size: int = 8) -> dict:
+                            bbox_shift: int = settings.DEFAULT_BBOX_SHIFT, fps: int = settings.DEFAULT_FPS, 
+                            batch_size: int = settings.DEFAULT_BATCH_SIZE) -> dict:
         """Generate talking head video using the exact Flask service approach"""
         try:
             if not self.models_loaded:
@@ -213,15 +256,39 @@ class MuseTalkModel:
             coord_list_cycle = coord_list + coord_list[::-1]
             frame_list_cycle = frame_list + frame_list[::-1]
             
-            # Generate frames (exactly like Flask service)
-            model_logger.info("Generating frames...")
+            # Setup for realtime generation
             video_num = len(whisper_chunks)
-            gen = datagen(whisper_chunks, input_latent_list_cycle, batch_size, device=self.device)
+            model_logger.info(f"Generating {video_num} frames using realtime approach...")
             
-            res_frame_list = []
+            # Create result directory for frames early
+            output_path_str = str(output_path)
+            os.makedirs(os.path.dirname(output_path_str), exist_ok=True)
+            
+            input_basename = os.path.basename(image_path).split('.')[0]
+            audio_basename = os.path.basename(audio_path).split('.')[0]
+            output_vid_name = f"{input_basename}_{audio_basename}"
+            result_img_save_path = os.path.join(os.path.dirname(output_path_str), output_vid_name)
+            os.makedirs(result_img_save_path, exist_ok=True)
+            
+            # Create queue for realtime frame processing
+            res_frame_queue = queue.Queue()
+            
+            # Start frame processor thread
+            process_thread = threading.Thread(
+                target=self.process_frames, 
+                args=(res_frame_queue, video_num, coord_list_cycle, frame_list_cycle, 
+                      result_img_save_path, parsing_mode)
+            )
+            process_thread.start()
+            
+            # Generate frames and put them in queue
+            gen = datagen(whisper_chunks, input_latent_list_cycle, batch_size, device=self.device)
             timesteps = torch.tensor([0], device=self.device)
             
-            for i, (whisper_batch, latent_batch) in enumerate(gen):
+            start_gen_time = time.time()
+            frames_generated = 0
+            
+            for whisper_batch, latent_batch in gen:
                 audio_feature_batch = self.pe(whisper_batch.to(self.device))
                 latent_batch = latent_batch.to(device=self.device, dtype=self.unet.model.dtype)
 
@@ -234,41 +301,19 @@ class MuseTalkModel:
                 pred_latents = pred_latents.to(device=self.device, dtype=self.vae.vae.dtype)
                 recon = self.vae.decode_latents(pred_latents)
                 
+                # Put frames in queue for processing
                 for res_frame in recon:
-                    res_frame_list.append(res_frame)
+                    res_frame_queue.put(res_frame)
+                    frames_generated += 1
             
-            model_logger.info(f"Generated {len(res_frame_list)} frames")
+            # Wait for processor thread to complete
+            process_thread.join()
             
-            # Save frames and create video (exactly like Flask service)
-            model_logger.info("Saving frames...")
-            output_path_str = str(output_path)
-            os.makedirs(os.path.dirname(output_path_str), exist_ok=True)
+            generation_time = time.time() - start_gen_time
+            model_logger.info(f"Realtime generation completed: {frames_generated} frames in {generation_time:.2f}s ({frames_generated/generation_time:.1f} fps)")
             
-            # Create result directory for frames
-            input_basename = os.path.basename(image_path).split('.')[0]
-            audio_basename = os.path.basename(audio_path).split('.')[0]
-            output_vid_name = f"{input_basename}_{audio_basename}"
-            result_img_save_path = os.path.join(os.path.dirname(output_path_str), output_vid_name)
-            os.makedirs(result_img_save_path, exist_ok=True)
-            
-            # Save frames (exactly like Flask service)
-            for idx, res_frame in enumerate(res_frame_list):
-                bbox = coord_list_cycle[idx % len(coord_list_cycle)]
-                ori_frame = frame_list_cycle[idx % len(frame_list_cycle)]
-                x1, y1, x2, y2 = bbox
-                
-                try:
-                    res_frame = cv2.resize(res_frame.astype(np.uint8), (x2 - x1, y2 - y1))
-                except:
-                    continue
-                
-                # Blend with original
-                combine_frame = get_image(ori_frame, res_frame, bbox, mode=parsing_mode, fp=self.face_parser)
-                
-                # Save frame
-                frame_filename = f"{idx:08d}.png"
-                frame_path = os.path.join(result_img_save_path, frame_filename)
-                cv2.imwrite(frame_path, combine_frame)
+            # Frames have already been saved by the processor thread
+            # No need to process them again
             
             # Create output video (exactly like Flask service)
             model_logger.info("Creating output video...")
@@ -293,7 +338,7 @@ class MuseTalkModel:
             return {
                 'status': 'success',
                 'output_path': output_path_str,
-                'frames_generated': len(res_frame_list)
+                'frames_generated': frames_generated
             }
                     
         except Exception as e:

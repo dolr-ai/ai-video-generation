@@ -30,9 +30,9 @@ class Task:
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     error_message: Optional[str] = None
-    bbox_shift: int = 0
-    fps: int = 25
-    batch_size: int = 8
+    bbox_shift: int = settings.DEFAULT_BBOX_SHIFT
+    fps: int = settings.DEFAULT_FPS
+    batch_size: int = settings.DEFAULT_BATCH_SIZE
     queue_position: Optional[int] = None
     
     def __post_init__(self):
@@ -80,7 +80,8 @@ class TaskManager:
             logger.error(f"Error saving tasks: {str(e)}")
     
     def create_task(self, task_id: str, image_path: str, audio_path: str, user_id: str,
-                   bbox_shift: int = 0, fps: int = 25, batch_size: int = 8) -> Task:
+                   bbox_shift: int = settings.DEFAULT_BBOX_SHIFT, fps: int = settings.DEFAULT_FPS, 
+                   batch_size: int = settings.DEFAULT_BATCH_SIZE) -> Task:
         """Create a new task"""
         task = Task(
             task_id=task_id,

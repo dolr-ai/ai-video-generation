@@ -45,9 +45,9 @@ class GenerateVideoRequest(BaseModel):
     image: str  # URL or local path
     audio: str  # URL or local path
     user_id: str  # User identifier
-    bbox_shift: int = 0
-    fps: int = 25
-    batch_size: int = 8
+    bbox_shift: int = settings.DEFAULT_BBOX_SHIFT
+    fps: int = settings.DEFAULT_FPS
+    batch_size: int = settings.DEFAULT_BATCH_SIZE
 
 
 class GenerateVideoResponse(BaseModel):
