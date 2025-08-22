@@ -1,0 +1,226 @@
+name: Upload Models to Fly.io Volume
+
+on:
+  # Manual trigger only - models don't change often
+  workflow_dispatch:
+    inputs:
+      force_upload:
+        description: 'Force re-upload even if models exist'
+        required: false
+        default: 'false'
+        type: boolean
+      gcs_bucket:
+        description: 'GCS bucket name (optional)'
+        required: false
+        default: 'talking-head-models'
+        type: string
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  APP_NAME: talking-head-api
+  ORG_NAME: yral-ds
+  REGION: ord
+  VOLUME_NAME: musetalk_models
+  VOLUME_SIZE: 100
+  GPU_TYPE: a10
+
+jobs:
+  upload-models:
+    name: Upload Models to Volume
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Debug Start
+      run: |
+        echo "=========================================="
+        echo "MODEL UPLOAD WORKFLOW STARTED"
+        echo "Force upload: ${{ inputs.force_upload }}"
+        echo "GCS bucket: ${{ inputs.gcs_bucket || 'talking-head-models' }}"
+        echo "App: $APP_NAME"
+        echo "=========================================="
+        date
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        sparse-checkout: |
+          MuseTalk/
+        sparse-checkout-cone-mode: false
+
+    - name: Setup Fly CLI
+      uses: superfly/flyctl-actions/setup-flyctl@master
+
+    - name: Authenticate to Google Cloud
+      uses: google-github-actions/auth@v2
+      with:
+        credentials_json: ${{ secrets.GCP_CREDENTIALS }}
+
+    - name: Set up Cloud SDK
+      uses: google-github-actions/setup-gcloud@v2
+
+    - name: Check if app exists
+      run: |
+        if ! flyctl apps list | grep -q "$APP_NAME"; then
+          echo "❌ App '$APP_NAME' does not exist. Please run the deploy workflow first."
+          exit 1
+        fi
+        echo "✅ App '$APP_NAME' exists"
+
+    - name: Ensure volume exists
+      run: |
+        cd MuseTalk
+        
+        # Check if volume exists
+        if flyctl volumes list --app $APP_NAME | grep -q "$VOLUME_NAME"; then
+          echo "✅ Volume '$VOLUME_NAME' already exists"
+          flyctl volumes list --app $APP_NAME
+        else
+          echo "📦 Creating volume '$VOLUME_NAME'..."
+          flyctl volumes create $VOLUME_NAME \
+            --size $VOLUME_SIZE \
+            --region $REGION \
+            --vm-gpu-kind $GPU_TYPE \
+            --app $APP_NAME \
+            --yes
+          echo "✅ Volume created successfully"
+        fi
+
+    - name: Download models from GCS
+      run: |
+        cd MuseTalk
+        echo "=========================================="
+        echo "Downloading models from GCS..."
+        echo "=========================================="
+
+        # Download models from GCS bucket
+        echo "📥 Downloading from GCS bucket: ${{ inputs.gcs_bucket || 'talking-head-models' }}"
+        gsutil -m cp -r "gs://${{ inputs.gcs_bucket || 'talking-head-models' }}/models" .
+
+        # Show downloaded files
+        echo "📋 Downloaded models:"
+        find models -type f -name "*.pth" -o -name "*.bin" -o -name "*.pt" | head -10
+        echo "💾 Model sizes:"
+        du -sh models/* 2>/dev/null || echo "No model directories found"
+        
+        # Clean up cache directories before upload
+        echo "🧹 Cleaning up .cache directories..."
+        find ./models -type d -name ".cache" -exec rm -rf {} + 2>/dev/null || true
+
+    - name: Ensure app is running
+      run: |
+        echo "🚀 Ensuring app is running..."
+        
+        # Check if any machines exist
+        if ! flyctl machines list --app $APP_NAME --json | jq -e '. | length > 0' > /dev/null; then
+          echo "❌ No machines found for app '$APP_NAME'. Please deploy the app first."
+          exit 1
+        fi
+        
+        # Start machines if stopped
+        flyctl machines start --app $APP_NAME || true
+        
+        # Wait for app to be ready
+        echo "⏳ Waiting for app to be ready..."
+        for i in {1..30}; do
+          if curl -f -s "https://${APP_NAME}.fly.dev/api/v1/health" > /dev/null 2>&1; then
+            echo "✅ App is healthy and ready"
+            break
+          fi
+          echo "Attempt $i/30: App not ready yet, waiting 10 seconds..."
+          sleep 10
+        done
+
+    - name: Check existing models
+      id: check_models
+      run: |
+        cd MuseTalk
+        
+        echo "🔍 Checking if models already exist in volume..."
+        
+        if [[ "${{ inputs.force_upload }}" == "true" ]]; then
+          echo "⚠️ Force upload requested, will overwrite existing models"
+          echo "should_upload=true" >> $GITHUB_OUTPUT
+        elif flyctl ssh console --app $APP_NAME -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded" 2>/dev/null; then
+          echo "✅ Models already exist in volume"
+          echo "📋 Existing model files:"
+          flyctl ssh console --app $APP_NAME -C "find /workspace/ai-video-generation/MuseTalk/models -type f -name '*.pth' -o -name '*.bin' -o -name '*.pt' | head -5" || echo "Could not list files"
+          echo "should_upload=false" >> $GITHUB_OUTPUT
+        else
+          echo "📦 Models not found in volume, upload needed"
+          echo "should_upload=true" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Upload models to volume
+      if: steps.check_models.outputs.should_upload == 'true'
+      run: |
+        cd MuseTalk
+        
+        echo "=========================================="
+        echo "UPLOADING MODELS TO VOLUME"
+        echo "=========================================="
+        
+        # Create models directory
+        echo "📁 Creating models directory..."
+        flyctl ssh console --app $APP_NAME -C "mkdir -p /workspace/ai-video-generation/MuseTalk/models"
+
+        # Upload models using tar for efficiency
+        echo "📤 Uploading models (this may take several minutes)..."
+        echo "Upload started at: $(date)"
+        
+        tar -czf - models | flyctl ssh console --app $APP_NAME -C "tar -xzf - -C /workspace/ai-video-generation/MuseTalk --no-same-owner --no-same-permissions"
+        
+        echo "Upload completed at: $(date)"
+
+        # Create marker file
+        echo "✅ Creating completion marker..."
+        flyctl ssh console --app $APP_NAME -C "touch /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"
+        flyctl ssh console --app $APP_NAME -C "echo '$(date)' > /workspace/ai-video-generation/MuseTalk/models/.upload_timestamp"
+
+    - name: Verify upload
+      run: |
+        cd MuseTalk
+        
+        echo "=========================================="
+        echo "VERIFYING MODEL UPLOAD"
+        echo "=========================================="
+        
+        # Check marker file
+        if flyctl ssh console --app $APP_NAME -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"; then
+          echo "✅ Models marker file exists"
+        else
+          echo "❌ Models marker file missing"
+          exit 1
+        fi
+        
+        # List uploaded files
+        echo "📋 Uploaded model files:"
+        flyctl ssh console --app $APP_NAME -C "find /workspace/ai-video-generation/MuseTalk/models -type f -name '*.pth' -o -name '*.bin' -o -name '*.pt' | head -10" || echo "No model files found"
+        
+        # Show upload timestamp
+        echo "📅 Upload timestamp:"
+        flyctl ssh console --app $APP_NAME -C "cat /workspace/ai-video-generation/MuseTalk/models/.upload_timestamp 2>/dev/null" || echo "No timestamp found"
+        
+        # Check directory sizes
+        echo "💾 Model directory sizes:"
+        flyctl ssh console --app $APP_NAME -C "du -sh /workspace/ai-video-generation/MuseTalk/models/* 2>/dev/null | head -10" || echo "Could not get directory sizes"
+
+    - name: Cleanup
+      run: |
+        echo "🧹 Cleaning up local models..."
+        rm -rf MuseTalk/models/ 2>/dev/null || true
+        echo "✅ Cleanup completed"
+
+    - name: Summary
+      run: |
+        echo "=========================================="
+        echo "MODEL UPLOAD SUMMARY"
+        echo "=========================================="
+        echo "✅ Workflow completed successfully"
+        echo "📱 App: $APP_NAME"
+        echo "💾 Volume: $VOLUME_NAME"
+        echo "🔄 Force upload: ${{ inputs.force_upload }}"
+        echo "📦 GCS bucket: ${{ inputs.gcs_bucket || 'talking-head-models' }}"
+        echo "⏰ Completed at: $(date)"
+        echo ""
+        echo "🔗 Access your API at: https://${APP_NAME}.fly.dev"
+        echo "🩺 Health check: https://${APP_NAME}.fly.dev/api/v1/health"

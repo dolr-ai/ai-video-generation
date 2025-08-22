@@ -1,0 +1,203 @@
+name: Deploy MuseTalk App to Fly.io
+
+on:
+  # Trigger on push to main branch
+  push:
+    branches: [ talking-head ]
+    paths:
+      - 'MuseTalk/**'
+      - '.github/workflows/deploy-app.yml'
+
+  # Allow manual deployment
+  workflow_dispatch:
+
+env:
+  FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+  # App configuration
+  APP_NAME: talking-head-api
+  ORG_NAME: yral-ds
+  REGION: ord
+  # Volume configuration
+  VOLUME_NAME: musetalk_models
+  VOLUME_SIZE: 100
+  GPU_TYPE: a10  # Must match fly.toml [[vm]] size
+  # Paths
+  FLY_TOML_PATH: fly/fly.toml
+  DOCKERFILE_PATH: fly/Dockerfile
+
+jobs:
+  deploy:
+    name: Deploy MuseTalk API
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Debug Start
+      run: |
+        echo "=========================================="
+        echo "APP DEPLOYMENT WORKFLOW STARTED"
+        echo "Runner: ${{ runner.os }} ${{ runner.arch }}"
+        echo "Branch: ${{ github.ref }}"
+        echo "Commit: ${{ github.sha }}"
+        echo "App: $APP_NAME"
+        echo "Region: $REGION"
+        echo "=========================================="
+        date
+        whoami
+        pwd
+        df -h
+
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Setup Fly CLI
+      uses: superfly/flyctl-actions/setup-flyctl@master
+
+    - name: Verify Fly CLI
+      run: |
+        flyctl version
+        echo "✅ Fly CLI ready"
+
+    - name: Create app if needed
+      run: |
+        cd MuseTalk
+        
+        echo "🔍 Checking if app '$APP_NAME' exists..."
+        
+        if flyctl apps list | grep -q "$APP_NAME"; then
+          echo "✅ App '$APP_NAME' already exists"
+          flyctl apps show $APP_NAME
+        else
+          echo "📱 Creating new app '$APP_NAME'..."
+          flyctl apps create $APP_NAME --org $ORG_NAME
+          echo "✅ App created successfully"
+        fi
+
+    - name: Create volume if needed
+      run: |
+        cd MuseTalk
+        
+        echo "🔍 Checking if volume '$VOLUME_NAME' exists..."
+        
+        if flyctl volumes list --app $APP_NAME | grep -q "$VOLUME_NAME"; then
+          echo "✅ Volume '$VOLUME_NAME' already exists"
+          flyctl volumes list --app $APP_NAME
+        else
+          echo "💾 Creating volume '$VOLUME_NAME'..."
+          flyctl volumes create $VOLUME_NAME \
+            --size $VOLUME_SIZE \
+            --region $REGION \
+            --vm-gpu-kind $GPU_TYPE \
+            --app $APP_NAME \
+            --yes
+          echo "✅ Volume created successfully"
+        fi
+
+    - name: Build and deploy app
+      run: |
+        cd MuseTalk
+        
+        echo "=========================================="
+        echo "DEPLOYING APPLICATION"
+        echo "=========================================="
+        echo "🏗️  Building and deploying app..."
+        echo "📋 Deploy started at: $(date)"
+        
+        # Deploy with extended timeout for GPU builds
+        flyctl deploy \
+          --config $FLY_TOML_PATH \
+          --dockerfile $DOCKERFILE_PATH \
+          --app $APP_NAME \
+          --primary-region $REGION \
+          --ha=false \
+          --depot=false \
+          --wait-timeout 3600 \
+          --strategy immediate
+        
+        echo "📋 Deploy completed at: $(date)"
+
+    - name: Wait for app to be ready
+      run: |
+        echo "⏳ Waiting for app to be fully ready..."
+        
+        # Give the app some time to fully initialize
+        sleep 60
+        
+        # Check health endpoint with retries
+        echo "🩺 Checking health endpoint..."
+        for i in {1..30}; do
+          if curl -f -s "https://${APP_NAME}.fly.dev/api/v1/health" > /dev/null 2>&1; then
+            echo "✅ App is healthy and responding"
+            break
+          fi
+          echo "Attempt $i/30: Health check failed, waiting 10 seconds..."
+          sleep 10
+          
+          if [ $i -eq 30 ]; then
+            echo "⚠️ Health check timeout, but deployment may still be successful"
+            echo "🔍 Machine status:"
+            flyctl machines list --app $APP_NAME
+          fi
+        done
+
+    - name: Check model status
+      run: |
+        echo "🔍 Checking if models are available..."
+        
+        if flyctl ssh console --app $APP_NAME -C "test -f /workspace/ai-video-generation/MuseTalk/models/.models_downloaded" 2>/dev/null; then
+          echo "✅ Models are available in volume"
+          echo "📅 Model upload timestamp:"
+          flyctl ssh console --app $APP_NAME -C "cat /workspace/ai-video-generation/MuseTalk/models/.upload_timestamp 2>/dev/null" || echo "No timestamp available"
+        else
+          echo "⚠️ Models not found in volume"
+          echo "💡 Run the 'Upload Models to Fly.io Volume' workflow to upload models"
+          echo "🔗 Or trigger it manually from the Actions tab"
+        fi
+
+    - name: Deployment summary
+      run: |
+        echo "=========================================="
+        echo "DEPLOYMENT SUMMARY"
+        echo "=========================================="
+        echo "✅ Application deployment completed"
+        echo "📱 App name: $APP_NAME"
+        echo "🌍 Region: $REGION"
+        echo "💾 Volume: $VOLUME_NAME"
+        echo "⏰ Completed at: $(date)"
+        echo ""
+        echo "🔗 API URL: https://${APP_NAME}.fly.dev"
+        echo "🩺 Health check: https://${APP_NAME}.fly.dev/api/v1/health"
+        echo "📖 API docs: https://${APP_NAME}.fly.dev/docs"
+        echo ""
+        echo "🎯 Next steps:"
+        echo "   1. Verify the health endpoint responds correctly"
+        echo "   2. If models aren't loaded, run the 'Upload Models' workflow"
+        echo "   3. Test the API with a sample request"
+        
+        # Show machine status
+        echo ""
+        echo "🖥️ Machine status:"
+        flyctl machines list --app $APP_NAME
+
+    - name: Test API endpoint
+      run: |
+        echo "🧪 Testing API endpoint..."
+        
+        # Test health endpoint
+        echo "Testing health endpoint..."
+        if response=$(curl -s "https://${APP_NAME}.fly.dev/api/v1/health" 2>/dev/null); then
+          echo "✅ Health endpoint response:"
+          echo "$response" | jq . 2>/dev/null || echo "$response"
+        else
+          echo "❌ Health endpoint not responding"
+        fi
+        
+        # Test docs endpoint
+        echo ""
+        echo "Testing docs endpoint..."
+        if curl -f -s "https://${APP_NAME}.fly.dev/docs" > /dev/null 2>&1; then
+          echo "✅ Docs endpoint is accessible"
+        else
+          echo "❌ Docs endpoint not accessible"
+        fi
