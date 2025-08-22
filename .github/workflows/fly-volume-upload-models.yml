@@ -163,11 +163,37 @@ jobs:
         echo "📁 Creating models directory..."
         flyctl ssh console --app $APP_NAME -C "mkdir -p /workspace/ai-video-generation/MuseTalk/models"
 
-        # Upload models using tar for efficiency
+        # Upload models using tar for efficiency with improved error handling
         echo "📤 Uploading models (this may take several minutes)..."
         echo "Upload started at: $(date)"
         
-        tar -czf - models | flyctl ssh console --app $APP_NAME -C "tar -xzf - -C /workspace/ai-video-generation/MuseTalk --no-same-owner --no-same-permissions"
+        # Try upload with retry mechanism and longer timeout
+        set +e  # Don't exit on error
+        UPLOAD_SUCCESS=false
+        
+        for attempt in {1..3}; do
+          echo "Upload attempt $attempt/3..."
+          
+          # Use compressed tar with extended timeout (30 minutes)
+          if timeout 1800 tar -czf - models | flyctl ssh console --app $APP_NAME --pty --timeout 1800 -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - --no-same-owner --no-same-permissions && echo 'UPLOAD_SUCCESS'"; then
+            UPLOAD_SUCCESS=true
+            echo "✅ Upload successful on attempt $attempt"
+            break
+          else
+            echo "❌ Upload attempt $attempt failed, exit code: $?"
+            if [ $attempt -lt 3 ]; then
+              echo "Waiting 30 seconds before retry..."
+              sleep 30
+            fi
+          fi
+        done
+        
+        set -e  # Re-enable exit on error
+        
+        if [ "$UPLOAD_SUCCESS" != "true" ]; then
+          echo "❌ All upload attempts failed"
+          exit 1
+        fi
         
         echo "Upload completed at: $(date)"
 
