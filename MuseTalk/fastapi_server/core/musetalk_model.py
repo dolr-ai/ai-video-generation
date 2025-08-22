@@ -200,6 +200,14 @@ class MuseTalkModel:
                 latents = self.vae.get_latents_for_unet(resized_crop_frame)
                 input_latent_list.append(latents)
             
+            # Check if we have any valid latents
+            if not input_latent_list:
+                model_logger.error("No valid face regions found in the image - all frames had coord_placeholder")
+                return {
+                    'status': 'error', 
+                    'message': 'No face detected in the image. Please provide an image with a clear face.'
+                }
+            
             # Create cyclic list for looping
             input_latent_list_cycle = input_latent_list + input_latent_list[::-1]
             coord_list_cycle = coord_list + coord_list[::-1]

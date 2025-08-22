@@ -77,7 +77,10 @@ def get_bbox_range(img_list,upperbondrange =0):
             if upperbondrange != 0:
                 half_face_coord[1] = upperbondrange+half_face_coord[1] #手动调整  + 向下（偏29）  - 向上（偏28）
 
-    text_range=f"Total frame:「{len(frames)}」 Manually adjust range : [ -{int(sum(average_range_minus) / len(average_range_minus))}~{int(sum(average_range_plus) / len(average_range_plus))} ] , the current value: {upperbondrange}"
+    if len(average_range_minus) > 0 and len(average_range_plus) > 0:
+        text_range=f"Total frame:「{len(frames)}」 Manually adjust range : [ -{int(sum(average_range_minus) / len(average_range_minus))}~{int(sum(average_range_plus) / len(average_range_plus))} ] , the current value: {upperbondrange}"
+    else:
+        text_range=f"Total frame:「{len(frames)}」 No faces detected for bbox adjustment calculation, current value: {upperbondrange}"
     return text_range
     
 
@@ -132,7 +135,10 @@ def get_landmark_and_bbox(img_list,upperbondrange =0):
                 coords_list += [f_landmark]
     
     print("********************************************bbox_shift parameter adjustment**********************************************************")
-    print(f"Total frame:「{len(frames)}」 Manually adjust range : [ -{int(sum(average_range_minus) / len(average_range_minus))}~{int(sum(average_range_plus) / len(average_range_plus))} ] , the current value: {upperbondrange}")
+    if len(average_range_minus) > 0 and len(average_range_plus) > 0:
+        print(f"Total frame:「{len(frames)}」 Manually adjust range : [ -{int(sum(average_range_minus) / len(average_range_minus))}~{int(sum(average_range_plus) / len(average_range_plus))} ] , the current value: {upperbondrange}")
+    else:
+        print(f"Total frame:「{len(frames)}」 No faces detected for bbox adjustment calculation, current value: {upperbondrange}")
     print("*************************************************************************************************************************************")
     return coords_list,frames
     

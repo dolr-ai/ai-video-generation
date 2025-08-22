@@ -53,6 +53,9 @@ def datagen(
     delay_frame=0,
     device="cuda:0",
 ):
+    if not vae_encode_latents:
+        raise ValueError("vae_encode_latents cannot be empty")
+    
     whisper_batch, latent_batch = [], []
     for i, w in enumerate(whisper_chunks):
         idx = (i+delay_frame)%len(vae_encode_latents)
