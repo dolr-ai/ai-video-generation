@@ -101,7 +101,7 @@ jobs:
 
         # Ensure machine is running
         echo "Ensuring machine is running..."
-        curl -X GET https://${APP_NAME}/api/v1/health
+        curl -X GET https://${APP_NAME}.fly.dev/api/v1/health
         sleep 180  # Wait 3 minutes for machine to fully start
 
         # Check machine status
