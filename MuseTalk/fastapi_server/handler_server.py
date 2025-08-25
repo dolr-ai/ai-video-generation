@@ -8,20 +8,17 @@ from api.endpoints import router as api_router
 from config.settings import settings
 from core.queue_processor import queue_processor
 
-# Setup comprehensive logging for handler server
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
 # Create separate file logger for handler server
 handler_server_logger = logging.getLogger('handler_server')
+handler_server_logger.propagate = False  # Prevent propagation to root logger
+handler_server_logger.setLevel(logging.DEBUG)
+
+# File handler for logging to file
 handler_server_handler = logging.FileHandler(os.path.join(settings.FASTAPI_SERVER_DIR, 'handler_server.log'))
 handler_server_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 handler_server_logger.addHandler(handler_server_handler)
-handler_server_logger.setLevel(logging.DEBUG)
 
-# Also create a console handler
+# Console handler for terminal output
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(logging.Formatter('%(asctime)s - HANDLER_SERVER - %(levelname)s - %(message)s'))
 handler_server_logger.addHandler(console_handler)

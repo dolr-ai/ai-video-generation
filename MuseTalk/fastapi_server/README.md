@@ -31,6 +31,7 @@ This implementation uses a **two-server design** for better scalability and reso
 - ✅ **Task Persistence**: Task status survives server restarts
 - ✅ **Working Directory Management**: Proper handling of MuseTalk's relative paths
 - ✅ **Flask Architecture Compliance**: Follows proven patterns from working Flask service
+- ✅ **Google Cloud Storage Integration**: Automatic upload to GCS bucket with path tracking
 
 ## 📋 Prerequisites
 
@@ -180,6 +181,7 @@ Check task status.
   "started_at": "2025-08-10T18:09:59.232820",
   "completed_at": "2025-08-10T18:11:01.249045",
   "output_path": "/workspace/ai-video-generation/MuseTalk/fastapi_server/storage/videos/c1b7134f-3798-4dce-8b0c-8505eb7c039f/generated_c1b7134f-3798-4dce-8b0c-8505eb7c039f.mp4",
+  "gcs_path": "gs://yral_ai_generated_videos/talking-head/c1b7134f-3798-4dce-8b0c-8505eb7c039f/output-100825.mp4",
   "error_message": null,
   "queue_position": null
 }
@@ -263,7 +265,32 @@ class Settings:
     
     # Queue settings
     MAX_CONCURRENT_MODEL_REQUESTS: int = 1  # Only 1 request to model server at a time
+    
+    # Google Cloud Storage settings
+    GCS_ENABLED: bool = True  # Enable/disable GCS upload
+    GCS_BUCKET_NAME: str = "yral_ai_generated_videos"
+    GCS_BASE_PATH: str = "talking-head"  # Base path in bucket
+    GCP_CREDENTIALS: str = os.environ.get("GCP_CREDENTIALS", "")  # GCP credentials from environment
 ```
+
+### 🌐 Google Cloud Storage Integration
+
+The server now automatically uploads generated videos to Google Cloud Storage:
+
+**Configuration:**
+1. Set the `GCP_CREDENTIALS` environment variable with your service account JSON credentials
+2. Videos are uploaded to: `gs://yral_ai_generated_videos/talking-head/<task_id>/output-ddmmyy.mp4`
+3. The GCS path is returned in the status endpoint response
+
+**Environment Setup:**
+```bash
+export GCP_CREDENTIALS='{"type": "service_account", "project_id": "...", ...}'
+```
+
+**Response with GCS path:**
+- The `/api/v1/status/{task_id}` endpoint returns both local and GCS paths
+- `output_path`: Local file path on the server
+- `gcs_path`: Google Cloud Storage URI (gs://...)
 
 ### ⚙️ Queue Configuration
 

@@ -63,6 +63,7 @@ class TaskStatusResponse(BaseModel):
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
     output_path: Optional[str] = None
+    gcs_path: Optional[str] = None  # GCS path for uploaded video
     error_message: Optional[str] = None
     queue_position: Optional[int] = None
 
@@ -200,6 +201,7 @@ async def get_task_status(task_id: str):
         started_at=task.started_at,
         completed_at=task.completed_at,
         output_path=task.output_path,
+        gcs_path=task.gcs_path,
         error_message=task.error_message,
         queue_position=task.queue_position,
     )

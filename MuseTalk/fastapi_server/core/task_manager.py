@@ -26,6 +26,7 @@ class Task:
     audio_path: str
     user_id: str
     output_path: Optional[str] = None
+    gcs_path: Optional[str] = None  # GCS path for uploaded video
     created_at: str = None
     started_at: Optional[str] = None
     completed_at: Optional[str] = None
@@ -106,6 +107,7 @@ class TaskManager:
     
     def update_task_status(self, task_id: str, status: TaskStatus, 
                           output_path: Optional[str] = None, 
+                          gcs_path: Optional[str] = None,
                           error_message: Optional[str] = None):
         """Update task status"""
         task = self.tasks.get(task_id)
@@ -123,6 +125,9 @@ class TaskManager:
             
         if output_path:
             task.output_path = output_path
+            
+        if gcs_path:
+            task.gcs_path = gcs_path
             
         if error_message:
             task.error_message = error_message

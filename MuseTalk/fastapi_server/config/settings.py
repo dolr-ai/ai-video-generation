@@ -52,6 +52,12 @@ class Settings:
     # Queue settings
     MAX_CONCURRENT_MODEL_REQUESTS: int = 1  # Only 1 request to model server at a time
 
+    # Google Cloud Storage settings
+    GCS_ENABLED: bool = True  # Enable/disable GCS upload
+    GCS_BUCKET_NAME: str = "yral_ai_generated_videos"
+    GCS_BASE_PATH: str = "talking-head"  # Base path in bucket
+    GCP_CREDENTIALS: str = os.environ.get("GCP_CREDENTIALS", "")  # GCP credentials from environment
+
     @classmethod
     def init_dirs(cls):
         """Create necessary directories if they don't exist"""

@@ -6,6 +6,7 @@ from typing import Optional
 
 from core.task_manager import task_manager, TaskStatus
 from utils.file_utils import create_task_directory, save_video_file
+from utils.gcs_utils import gcs_uploader
 from config.settings import settings
 
 # Setup logging
@@ -136,14 +137,28 @@ class QueueProcessor:
                             task_id, temp_output_path, output_filename
                         )
 
-                        # Update task status
+                        # Upload to GCS if enabled
+                        gcs_path = None
+                        if settings.GCS_ENABLED:
+                            queue_logger.info(f"📤 Uploading video to GCS for task {task_id}")
+                            gcs_path = gcs_uploader.upload_video(final_video_path, task_id)
+                            if gcs_path:
+                                queue_logger.info(f"✅ GCS upload successful: {gcs_path}")
+                            else:
+                                queue_logger.warning(f"⚠️ GCS upload failed for task {task_id}, continuing with local path")
+
+                        # Update task status with both local and GCS paths
                         task_manager.update_task_status(
-                            task_id, TaskStatus.COMPLETED, output_path=final_video_path
+                            task_id, TaskStatus.COMPLETED, 
+                            output_path=final_video_path,
+                            gcs_path=gcs_path
                         )
 
                         queue_logger.info(
                             f"✅ Task {task_id} completed successfully - Video saved to: {final_video_path}"
                         )
+                        if gcs_path:
+                            queue_logger.info(f"   GCS path: {gcs_path}")
                     else:
                         # Generation failed
                         task_manager.update_task_status(

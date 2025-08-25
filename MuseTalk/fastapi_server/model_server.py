@@ -9,20 +9,17 @@ from typing import Optional
 from core.musetalk_model import MuseTalkModel
 from config.settings import settings
 
-# Setup comprehensive logging for model server
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-)
-
 # Create separate file logger for model server
 model_server_logger = logging.getLogger('model_server')
+model_server_logger.propagate = False  # Prevent propagation to root logger
+model_server_logger.setLevel(logging.DEBUG)
+
+# File handler for logging to file
 model_server_handler = logging.FileHandler(os.path.join(settings.FASTAPI_SERVER_DIR, 'model_server.log'))
 model_server_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
 model_server_logger.addHandler(model_server_handler)
-model_server_logger.setLevel(logging.DEBUG)
 
-# Also create a console handler
+# Console handler for terminal output
 console_handler = logging.StreamHandler()
 console_handler.setFormatter(logging.Formatter('%(asctime)s - MODEL_SERVER - %(levelname)s - %(message)s'))
 model_server_logger.addHandler(console_handler)

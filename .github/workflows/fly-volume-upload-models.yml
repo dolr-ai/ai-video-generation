@@ -156,51 +156,102 @@ jobs:
         cd MuseTalk
         
         echo "=========================================="
-        echo "UPLOADING MODELS TO VOLUME"
+        echo "UPLOADING MODELS TO VOLUME (ONE AT A TIME)"
         echo "=========================================="
         
-        # Create models directory
-        echo "📁 Creating models directory..."
+        # Create models directories
+        echo "📁 Creating models directory structure..."
         flyctl ssh console --app $APP_NAME -C "mkdir -p /workspace/ai-video-generation/MuseTalk/models"
-
-        # Upload models using tar for efficiency with improved error handling
-        echo "📤 Uploading models (this may take several minutes)..."
+        
+        echo "📤 Starting individual model uploads..."
         echo "Upload started at: $(date)"
         
-        # Try upload with retry mechanism and longer timeout
-        set +e  # Don't exit on error
-        UPLOAD_SUCCESS=false
+        # Count total models
+        TOTAL_MODELS=$(find models -type f \( -name "*.pth" -o -name "*.bin" -o -name "*.pt" -o -name "*.json" -o -name "*.onnx" \) | wc -l)
+        CURRENT_MODEL=0
+        FAILED_UPLOADS=""
         
-        for attempt in {1..3}; do
-          echo "Upload attempt $attempt/3..."
-          
-          # Use compressed tar with extended timeout (30 minutes)
-          if timeout 1800 tar -czf - models | flyctl ssh console --app $APP_NAME --pty -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - --no-same-owner --no-same-permissions && echo 'UPLOAD_SUCCESS'"; then
-            UPLOAD_SUCCESS=true
-            echo "✅ Upload successful on attempt $attempt"
-            break
-          else
-            echo "❌ Upload attempt $attempt failed, exit code: $?"
-            if [ $attempt -lt 3 ]; then
-              echo "Waiting 30 seconds before retry..."
-              sleep 30
+        # Upload each model directory separately
+        for model_dir in models/*/; do
+          if [ -d "$model_dir" ]; then
+            MODEL_NAME=$(basename "$model_dir")
+            echo ""
+            echo "📦 Uploading model directory: $MODEL_NAME"
+            
+            # Create the specific model directory on remote
+            flyctl ssh console --app $APP_NAME -C "mkdir -p /workspace/ai-video-generation/MuseTalk/models/$MODEL_NAME"
+            
+            # Count files in this directory
+            FILE_COUNT=$(find "$model_dir" -type f | wc -l)
+            echo "   Files to upload: $FILE_COUNT"
+            
+            # Try uploading this model directory with retries
+            UPLOAD_SUCCESS=false
+            for attempt in {1..2}; do
+              echo "   Attempt $attempt/2 for $MODEL_NAME..."
+              
+              # Create tar for just this model directory
+              if tar -czf - "$model_dir" | flyctl ssh console --app $APP_NAME --pty -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - --no-same-owner --no-same-permissions"; then
+                UPLOAD_SUCCESS=true
+                echo "   ✅ $MODEL_NAME uploaded successfully"
+                break
+              else
+                echo "   ❌ Failed attempt $attempt for $MODEL_NAME"
+                if [ $attempt -lt 2 ]; then
+                  sleep 5
+                fi
+              fi
+            done
+            
+            if [ "$UPLOAD_SUCCESS" != "true" ]; then
+              echo "   ⚠️ Failed to upload $MODEL_NAME after 2 attempts"
+              FAILED_UPLOADS="$FAILED_UPLOADS $MODEL_NAME"
             fi
+            
+            # Small delay between model uploads
+            sleep 2
           fi
         done
         
-        set -e  # Re-enable exit on error
-        
-        if [ "$UPLOAD_SUCCESS" != "true" ]; then
-          echo "❌ All upload attempts failed"
-          exit 1
+        # Also upload any root-level model files (if any)
+        ROOT_FILES=$(find models -maxdepth 1 -type f \( -name "*.pth" -o -name "*.bin" -o -name "*.pt" -o -name "*.json" -o -name "*.onnx" \) 2>/dev/null)
+        if [ ! -z "$ROOT_FILES" ]; then
+          echo ""
+          echo "📦 Uploading root-level model files..."
+          for file in $ROOT_FILES; do
+            FILENAME=$(basename "$file")
+            echo "   Uploading: $FILENAME"
+            
+            # Upload individual file
+            if tar -czf - "$file" | flyctl ssh console --app $APP_NAME --pty -C "cd /workspace/ai-video-generation/MuseTalk && tar -xzf - --no-same-owner --no-same-permissions"; then
+              echo "   ✅ $FILENAME uploaded"
+            else
+              echo "   ⚠️ Failed to upload $FILENAME"
+              FAILED_UPLOADS="$FAILED_UPLOADS $FILENAME"
+            fi
+            
+            sleep 1
+          done
         fi
         
+        echo ""
         echo "Upload completed at: $(date)"
-
+        
+        # Check if any uploads failed
+        if [ ! -z "$FAILED_UPLOADS" ]; then
+          echo "⚠️ Warning: Some uploads failed: $FAILED_UPLOADS"
+          echo "The application may not work correctly without all models."
+        fi
+        
         # Create marker file
         echo "✅ Creating completion marker..."
         flyctl ssh console --app $APP_NAME -C "touch /workspace/ai-video-generation/MuseTalk/models/.models_downloaded"
         flyctl ssh console --app $APP_NAME -C "echo '$(date)' > /workspace/ai-video-generation/MuseTalk/models/.upload_timestamp"
+        
+        # List what was uploaded
+        echo ""
+        echo "📋 Verifying uploaded model directories:"
+        flyctl ssh console --app $APP_NAME -C "ls -la /workspace/ai-video-generation/MuseTalk/models/" || echo "Could not list directories"
 
     - name: Verify upload
       run: |
