@@ -94,6 +94,15 @@ jobs:
           echo "✅ Volume created successfully"
         fi
 
+    - name: Set GCS credentials secret
+      if: ${{ secrets.GCP_CREDENTIALS }}
+      run: |
+        cd MuseTalk
+        
+        echo "🔐 Setting GCS credentials as Fly secret..."
+        echo "${{ secrets.GCP_CREDENTIALS }}" | flyctl secrets set GCP_CREDENTIALS=- --app $APP_NAME
+        echo "✅ GCS credentials configured"
+
     - name: Build and deploy app
       run: |
         cd MuseTalk
