@@ -95,13 +95,17 @@ jobs:
         fi
 
     - name: Set GCS credentials secret
-      if: ${{ secrets.GCP_CREDENTIALS }}
       run: |
         cd MuseTalk
         
         echo "🔐 Setting GCS credentials as Fly secret..."
-        echo "${{ secrets.GCP_CREDENTIALS }}" | flyctl secrets set GCP_CREDENTIALS=- --app $APP_NAME
-        echo "✅ GCS credentials configured"
+        if [ -n "${{ secrets.GCP_CREDENTIALS }}" ]; then
+          flyctl secrets set --stage --app $APP_NAME "GCP_CREDENTIALS=${{ secrets.GCP_CREDENTIALS }}"
+          echo "✅ GCS credentials configured (staged for next deployment)"
+        else
+          echo "⚠️ GCP_CREDENTIALS secret not found in GitHub secrets"
+          echo "   GCS upload will be disabled in production"
+        fi
 
     - name: Build and deploy app
       run: |
