@@ -16,6 +16,7 @@ from utils.file_utils import (
     is_allowed_file,
     detect_file_type_from_url,
 )
+from utils.image_utils import resize_image_to_1080p, get_image_info, estimate_processing_time
 from config.settings import settings
 
 # Create separate file logger for endpoints with better formatting
@@ -128,7 +129,8 @@ async def generate_video(request: GenerateVideoRequest):
         # Download files if they are URLs
         if is_url(request.image):
             endpoint_logger.info(f"📥 Downloading image from URL: {request.image}")
-            image_path = download_file(request.image, task_dir, "image")
+            downloaded_image = download_file(request.image, task_dir, "image")
+            image_path = downloaded_image
         else:
             # Check if local file exists
             if not os.path.exists(request.image):
@@ -136,6 +138,39 @@ async def generate_video(request: GenerateVideoRequest):
                     status_code=404, detail=f"Image file not found: {request.image}"
                 )
             image_path = request.image
+        
+        # Get image info and resize if needed
+        endpoint_logger.info(f"📊 Analyzing image: {image_path}")
+        image_info = get_image_info(image_path)
+        
+        if image_info:
+            endpoint_logger.info(f"  Resolution: {image_info['width']}x{image_info['height']} ({image_info['megapixels']} MP)")
+            endpoint_logger.info(f"  Format: {image_info['format']}, Size: {image_info['file_size']:,} bytes")
+            
+            # Resize if image is larger than 1080p
+            if image_info['needs_resize']:
+                endpoint_logger.info(f"🔄 Image exceeds 1080p, resizing...")
+                resized_path = resize_image_to_1080p(image_path, task_dir)
+                if resized_path:
+                    image_path = resized_path
+                    # Get info about resized image
+                    resized_info = get_image_info(image_path)
+                    if resized_info:
+                        endpoint_logger.info(f"✅ Resized to: {resized_info['width']}x{resized_info['height']} ({resized_info['megapixels']} MP)")
+                        
+                        # Estimate processing time
+                        estimated_time = estimate_processing_time(
+                            resized_info['width'], 
+                            resized_info['height'], 
+                            30  # Default estimate for audio
+                        )
+                        endpoint_logger.info(f"⏱️  Estimated processing time: {estimated_time} seconds")
+                else:
+                    endpoint_logger.warning("⚠️ Failed to resize image, proceeding with original")
+            else:
+                endpoint_logger.info("✅ Image within 1080p bounds, no resizing needed")
+        else:
+            endpoint_logger.warning("⚠️ Could not analyze image, proceeding anyway")
 
         if is_url(request.audio):
             endpoint_logger.info(f"📥 Downloading audio from URL: {request.audio}")
@@ -219,12 +254,20 @@ async def get_video(task_id: str):
             status_code=400, detail=f"Task not completed. Status: {task.status}"
         )
 
-    if not task.output_path or not os.path.exists(task.output_path):
-        raise HTTPException(status_code=404, detail="Video file not found")
-
-    return FileResponse(
-        task.output_path, media_type="video/mp4", filename=f"generated_{task_id}.mp4"
-    )
+    # Check if local file exists
+    if task.output_path and os.path.exists(task.output_path):
+        return FileResponse(
+            task.output_path, media_type="video/mp4", filename=f"generated_{task_id}.mp4"
+        )
+    
+    # If local file doesn't exist but GCS path exists, inform the user
+    if task.gcs_path:
+        raise HTTPException(
+            status_code=410, 
+            detail=f"Video file has been moved to cloud storage. GCS path: {task.gcs_path}"
+        )
+    
+    raise HTTPException(status_code=404, detail="Video file not found")
 
 
 @router.post("/upload", response_model=UploadResponse)

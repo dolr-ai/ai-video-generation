@@ -6,12 +6,11 @@ import os
 
 # ========== CHANGE THESE ==========
 AUDIO_PATH = "https://storage.googleapis.com/talking-head-upload-simulation/user_id_1/request_id_2/test_audio1-female.mp3"
-IMAGE_PATH = "https://storage.googleapis.com/talking-head-upload-simulation/user_id_1/request_id_3/test_image3-female.jpeg"
+IMAGE_PATH = "https://mir-s3-cdn-cf.behance.net/project_modules/fs/567d9f52933461.592284396c87c.jpg"
 USER_ID = "user123"
 # ==================================
 
 API_BASE_URL = "http://localhost:8000/api/v1"
-
 
 def main():
     # Submit request
@@ -47,15 +46,15 @@ def main():
 
         time.sleep(5)
 
-    # Download video
-    print("Downloading video...")
-    video_resp = requests.get(f"{API_BASE_URL}/video/{task_id}")
+    # # Download video
+    # print("Downloading video...")
+    # video_resp = requests.get(f"{API_BASE_URL}/video/{task_id}")
 
-    filename = f"video_{task_id}.mp4"
-    with open(filename, "wb") as f:
-        f.write(video_resp.content)
+    # filename = f"video_{task_id}.mp4"
+    # with open(filename, "wb") as f:
+    #     f.write(video_resp.content)
 
-    print(f"Downloaded: {filename}")
+    # print(f"Downloaded: {filename}")
 
 
 if __name__ == "__main__":

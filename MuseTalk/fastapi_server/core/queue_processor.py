@@ -139,18 +139,20 @@ class QueueProcessor:
 
                         # Upload to GCS if enabled
                         gcs_path = None
+                        cleanup_local = False
                         if settings.GCS_ENABLED:
                             queue_logger.info(f"📤 Uploading video to GCS for task {task_id}")
                             gcs_path = gcs_uploader.upload_video(final_video_path, task_id)
                             if gcs_path:
                                 queue_logger.info(f"✅ GCS upload successful: {gcs_path}")
+                                cleanup_local = True  # Mark for cleanup since GCS upload succeeded
                             else:
                                 queue_logger.warning(f"⚠️ GCS upload failed for task {task_id}, continuing with local path")
 
                         # Update task status with both local and GCS paths
                         task_manager.update_task_status(
                             task_id, TaskStatus.COMPLETED, 
-                            output_path=final_video_path,
+                            output_path=final_video_path if not cleanup_local else None,
                             gcs_path=gcs_path
                         )
 
@@ -159,6 +161,24 @@ class QueueProcessor:
                         )
                         if gcs_path:
                             queue_logger.info(f"   GCS path: {gcs_path}")
+                            
+                        # Clean up local files if GCS upload was successful
+                        if cleanup_local and settings.GCS_CLEANUP_LOCAL:
+                            try:
+                                # Remove the video file
+                                if os.path.exists(final_video_path):
+                                    os.remove(final_video_path)
+                                    queue_logger.info(f"🧹 Cleaned up local video file: {final_video_path}")
+                                
+                                # Remove the entire task directory
+                                task_dir = os.path.dirname(final_video_path)
+                                if os.path.exists(task_dir):
+                                    import shutil
+                                    shutil.rmtree(task_dir)
+                                    queue_logger.info(f"🧹 Cleaned up task directory: {task_dir}")
+                                    
+                            except Exception as e:
+                                queue_logger.warning(f"⚠️ Failed to clean up local files: {str(e)}")
                     else:
                         # Generation failed
                         task_manager.update_task_status(

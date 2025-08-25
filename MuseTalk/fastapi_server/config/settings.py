@@ -31,9 +31,15 @@ class Settings:
 
     # File settings
     MAX_FILE_SIZE: int = 500 * 1024 * 1024  # 500MB
-    ALLOWED_IMAGE_EXTENSIONS: List[str] = ["png", "jpg", "jpeg", "gif", "bmp"]
+    ALLOWED_IMAGE_EXTENSIONS: List[str] = ["png", "jpg", "jpeg"]
     ALLOWED_AUDIO_EXTENSIONS: List[str] = ["wav", "mp3", "aac", "m4a", "ogg"]
     ALLOWED_VIDEO_EXTENSIONS: List[str] = ["mp4", "avi", "mov", "mkv", "webm", "flv"]
+
+    # Image processing settings
+    MAX_IMAGE_WIDTH: int = 1920   # Max width (1080p)
+    MAX_IMAGE_HEIGHT: int = 1080  # Max height (1080p)
+    AUTO_RESIZE_IMAGES: bool = True  # Automatically resize images larger than max dimensions
+    RESIZE_QUALITY: int = 95  # JPEG quality for resized images (1-100)
 
     # Model settings
     DEFAULT_FPS: int = 25
@@ -57,6 +63,7 @@ class Settings:
     GCS_BUCKET_NAME: str = "yral_ai_generated_videos"
     GCS_BASE_PATH: str = "talking-head"  # Base path in bucket
     GCP_CREDENTIALS: str = os.environ.get("GCP_CREDENTIALS", "")  # GCP credentials from environment
+    GCS_CLEANUP_LOCAL: bool = True  # Delete local files after successful GCS upload
 
     @classmethod
     def init_dirs(cls):
