@@ -48,6 +48,31 @@ class Settings:
     USE_FLOAT16: bool = True
     GPU_ID: int = 0
 
+    # Video processing settings
+    MAX_VIDEO_DURATION: int = 30  # Maximum video duration in seconds (start with 30s)
+    VIDEO_EXTRACT_FPS: int = 10  # FPS for frame extraction (lower = fewer frames to process)
+    VIDEO_BATCH_SIZE: int = 4  # Smaller batch for video (memory constraint)
+    VIDEO_FRAME_BUFFER_SIZE: int = 100  # Max frames to keep in memory at once
+    MAX_VIDEO_RESOLUTION: int = 720  # Max resolution for video (start with 720p for performance)
+    VIDEO_RESIZE_QUALITY: str = "medium"  # fast/medium/high
+    TEMP_FRAME_CLEANUP: bool = True  # Clean extracted frames after processing
+
+    # Memory management
+    VIDEO_MEMORY_LIMIT_GB: float = 8.0  # Max GPU memory for video processing
+    ADAPTIVE_BATCH_SIZE: bool = True  # Adjust batch based on available memory
+
+    # Face detection caching
+    ENABLE_FACE_CACHE: bool = True  # Enable face detection caching
+    CACHE_DIR = os.path.join(STORAGE_DIR, "cache")  # Cache storage directory
+    CACHE_MAX_SIZE_GB: float = 5.0  # Maximum cache size in GB
+
+    # Realtime video generation
+    ENABLE_REALTIME_MODE: bool = True  # Enable realtime generation endpoints
+    REALTIME_PREP_DIR = os.path.join(STORAGE_DIR, "realtime")  # Realtime preparation directory
+    REALTIME_CLEANUP_DAYS: int = 7  # Days to keep realtime preparations
+    REALTIME_BATCH_SIZE: int = 2  # Smaller batch for realtime (ultra-fast)
+    REALTIME_FRAME_SMOOTHING: bool = True  # Enable frame smoothing for better quality
+
     # Version
     MUSETALK_VERSION: str = "v15"
 
@@ -59,7 +84,7 @@ class Settings:
     MAX_CONCURRENT_MODEL_REQUESTS: int = 1  # Only 1 request to model server at a time
 
     # Google Cloud Storage settings
-    GCS_ENABLED: bool = True  # Enable/disable GCS upload
+    GCS_ENABLED: bool = False  # Enable/disable GCS upload
     GCS_BUCKET_NAME: str = "yral_ai_generated_videos"
     GCS_BASE_PATH: str = "talking-head"  # Base path in bucket
     GCP_CREDENTIALS: str = os.environ.get("GCP_CREDENTIALS", "")  # GCP credentials from environment
@@ -72,6 +97,8 @@ class Settings:
         os.makedirs(cls.TEMP_DIR, exist_ok=True)
         os.makedirs(cls.VIDEOS_DIR, exist_ok=True)
         os.makedirs(cls.UPLOADS_DIR, exist_ok=True)
+        os.makedirs(cls.CACHE_DIR, exist_ok=True)
+        os.makedirs(cls.REALTIME_PREP_DIR, exist_ok=True)
 
 
 settings = Settings()

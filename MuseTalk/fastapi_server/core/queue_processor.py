@@ -96,9 +96,12 @@ class QueueProcessor:
                 return
             
             queue_logger.info(f"🎬 Starting processing for task: {task_id}")
-            queue_logger.info(f"  Image: {task.image_path}")
+            queue_logger.info(f"  Input type: {task.input_type}")
+            queue_logger.info(f"  Image/Video: {task.image_path}")
             queue_logger.info(f"  Audio: {task.audio_path}")
             queue_logger.info(f"  User ID: {task.user_id}")
+            if task.input_type == "video":
+                queue_logger.info(f"  Video time: {task.video_start_time}s to {task.video_end_time}s")
 
             # Update status to processing
             task_manager.update_task_status(task_id, TaskStatus.PROCESSING)
@@ -113,20 +116,46 @@ class QueueProcessor:
                 model_server_url = f"http://{settings.MODEL_SERVER_HOST}:{settings.MODEL_SERVER_PORT}"
                 queue_logger.info(f"Model server URL: {model_server_url}")
 
-                generation_request = {
-                    "task_id": task_id,
-                    "image_path": task.image_path,
-                    "audio_path": task.audio_path,
-                    "output_path": temp_output_path,
-                    "bbox_shift": task.bbox_shift,
-                    "fps": task.fps,
-                    "batch_size": task.batch_size,
-                }
+                # Handle realtime vs regular generation
+                if task.input_type == "realtime":
+                    # Extract prep_id from image_path (format: "realtime:prep_id")
+                    prep_id = task.image_path.split(":", 1)[1] if ":" in task.image_path else task.image_path
+                    
+                    generation_request = {
+                        "task_id": task_id,
+                        "prep_id": prep_id,
+                        "audio_path": task.audio_path,
+                        "output_path": temp_output_path,
+                        "fps": task.fps,
+                    }
+                    
+                    endpoint_url = f"{model_server_url}/generate_realtime"
+                    timeout = 60  # Shorter timeout for realtime
+                else:
+                    # Regular generation
+                    generation_request = {
+                        "task_id": task_id,
+                        "image_path": task.image_path,
+                        "audio_path": task.audio_path,
+                        "output_path": temp_output_path,
+                        "bbox_shift": task.bbox_shift,
+                        "fps": task.fps,
+                        "batch_size": task.batch_size,
+                        "input_type": task.input_type,
+                    }
+                    
+                    # Add video-specific parameters if needed
+                    if task.input_type == "video":
+                        generation_request["video_start_time"] = task.video_start_time
+                        generation_request["video_end_time"] = task.video_end_time
+                    
+                    endpoint_url = f"{model_server_url}/generate"
+                    timeout = settings.GENERATION_TIMEOUT
 
                 response = await client.post(
-                    f"{model_server_url}/generate",
+                    endpoint_url,
                     json=generation_request,
-                    timeout=settings.GENERATION_TIMEOUT,
+                    timeout=timeout,
                 )
 
                 if response.status_code == 200:

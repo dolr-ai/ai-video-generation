@@ -35,6 +35,9 @@ class Task:
     fps: int = settings.DEFAULT_FPS
     batch_size: int = settings.DEFAULT_BATCH_SIZE
     queue_position: Optional[int] = None
+    input_type: str = "image"  # "image" or "video"
+    video_start_time: Optional[float] = None  # For video input
+    video_end_time: Optional[float] = None  # For video input
     
     def __post_init__(self):
         if self.created_at is None:
@@ -82,7 +85,8 @@ class TaskManager:
     
     def create_task(self, task_id: str, image_path: str, audio_path: str, user_id: str,
                    bbox_shift: int = settings.DEFAULT_BBOX_SHIFT, fps: int = settings.DEFAULT_FPS, 
-                   batch_size: int = settings.DEFAULT_BATCH_SIZE) -> Task:
+                   batch_size: int = settings.DEFAULT_BATCH_SIZE, input_type: str = "image",
+                   video_start_time: Optional[float] = None, video_end_time: Optional[float] = None) -> Task:
         """Create a new task"""
         task = Task(
             task_id=task_id,
@@ -92,7 +96,10 @@ class TaskManager:
             user_id=user_id,
             bbox_shift=bbox_shift,
             fps=fps,
-            batch_size=batch_size
+            batch_size=batch_size,
+            input_type=input_type,
+            video_start_time=video_start_time,
+            video_end_time=video_end_time
         )
         
         self.tasks[task_id] = task

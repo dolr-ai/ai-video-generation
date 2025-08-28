@@ -69,7 +69,8 @@ def download_file(url: str, dest_dir: str, file_type: str) -> str:
             # Generate filename based on file type
             ext_map = {
                 'image': 'jpg',
-                'audio': 'wav'
+                'audio': 'wav',
+                'video': 'mp4'
             }
             filename = f"{file_type}_{uuid.uuid4().hex[:8]}.{ext_map.get(file_type, 'bin')}"
         
